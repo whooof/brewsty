@@ -30,7 +30,7 @@ jobs:
        run: cargo test --verbose
 
    release-macos-arm64:
-     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/main'))
      runs-on: macos-latest
      steps:
      - uses: actions/checkout@v4
