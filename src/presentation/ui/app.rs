@@ -708,7 +708,7 @@ impl eframe::App for BrewstyApp {
             .show(ctx, |ui| {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    ui.add_space(ui.available_width() / 2.0 - CLEAR_BUTTON_HALF_WIDTH);
+                    ui.add_space(ui.available_width() / 2.0 - 40.0);
                     if ui.button("Clear Output").clicked() {
                         self.log_manager = LogManager::new();
                     }
