@@ -728,7 +728,7 @@ impl eframe::App for BrewstyApp {
                         }
                     });
                 
-                self.output_panel_height = ui.available_height();
+                self.output_panel_height = ui.min_rect().height();
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {

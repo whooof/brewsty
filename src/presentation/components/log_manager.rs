@@ -34,8 +34,8 @@ impl LogManager {
         }
     }
 
-    pub fn all_logs(&self) -> Vec<&LogEntry> {
-        self.logs.iter().collect()
+    pub fn all_logs(&self) -> impl Iterator<Item = &LogEntry> {
+        self.logs.iter()
     }
 }
 
