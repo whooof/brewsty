@@ -15,6 +15,15 @@ impl BrewPackageRepository {
         Self
     }
 
+    fn get_pinned_packages(&self) -> Result<Vec<String>> {
+        let output = BrewCommand::list_pinned()?;
+        Ok(output
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(|line| line.trim().to_string())
+            .collect())
+    }
+
     fn parse_installed_packages(&self, json: &str, package_type: PackageType) -> Result<Vec<Package>> {
         let data: Value = serde_json::from_str(json)?;
         let mut packages = Vec::new();
@@ -23,6 +32,9 @@ impl BrewPackageRepository {
             PackageType::Formula => "formulae",
             PackageType::Cask => "casks",
         };
+
+        // Get the list of pinned packages
+        let pinned_packages = self.get_pinned_packages().unwrap_or_default();
 
         if let Some(items) = data.get(items_key).and_then(|v| v.as_array()) {
             for item in items {
@@ -35,10 +47,13 @@ impl BrewPackageRepository {
                         .and_then(|v| v.as_str())
                         .map(String::from);
 
+                    let is_pinned = pinned_packages.contains(&name.to_string());
+
                     packages.push(
                         Package::new(name.to_string(), package_type.clone())
                             .set_installed(true)
-                            .with_version(version.unwrap_or_default()),
+                            .with_version(version.unwrap_or_default())
+                            .set_pinned(is_pinned),
                     );
                 }
             }
@@ -303,5 +318,15 @@ impl PackageRepository for BrewPackageRepository {
         }
 
         Err(anyhow::anyhow!("Package info not found for {}", name))
+    }
+
+    async fn pin_package(&self, package: &Package) -> Result<()> {
+        let name = package.name.clone();
+        tokio::task::spawn_blocking(move || BrewCommand::pin_package(&name)).await?
+    }
+
+    async fn unpin_package(&self, package: &Package) -> Result<()> {
+        let name = package.name.clone();
+        tokio::task::spawn_blocking(move || BrewCommand::unpin_package(&name)).await?
     }
 }

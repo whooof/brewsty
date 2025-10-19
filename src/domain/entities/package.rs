@@ -25,6 +25,7 @@ pub struct Package {
     pub installed: bool,
     pub outdated: bool,
     pub version_load_failed: bool,
+    pub pinned: bool,
 }
 
 impl Package {
@@ -41,6 +42,7 @@ impl Package {
             installed: false,
             outdated: false,
             version_load_failed: false,
+            pinned: false,
         }
     }
 
@@ -71,6 +73,11 @@ impl Package {
 
     pub fn set_version_load_failed(mut self, failed: bool) -> Self {
         self.version_load_failed = failed;
+        self
+    }
+
+    pub fn set_pinned(mut self, pinned: bool) -> Self {
+        self.pinned = pinned;
         self
     }
 }
