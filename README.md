@@ -17,6 +17,12 @@ Use, fork, and learn freely. If you find a bug, blame the robots, keep the credi
 
 ## Features
 
+
+<img width="1312" height="940" alt="obraz" src="https://github.com/user-attachments/assets/21d89f14-b028-41bf-9022-fb9f9e8f1328" />
+<img width="1312" height="940" alt="obraz" src="https://github.com/user-attachments/assets/556c4a1f-31f1-4746-a1a6-86f07ef23ee0" />
+<img width="1312" height="940" alt="obraz" src="https://github.com/user-attachments/assets/46c739fb-7d1d-4a7c-8030-6b63edb992dc" />
+
+
 - 📦 **Package Management**
   - View installed formulae and casks
   - Check for outdated packages
