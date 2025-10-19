@@ -41,6 +41,16 @@ pub enum AsyncTask {
         logs: Arc<Mutex<Vec<String>>>,
         message: Arc<Mutex<String>>,
     },
+    CleanCache {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    CleanupOldVersions {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
 }
 
 pub struct TaskResult {
@@ -54,6 +64,8 @@ pub struct TaskResult {
     pub uninstall_completed: Option<(bool, String)>,
     pub update_completed: Option<(bool, String)>,
     pub update_all_completed: Option<(bool, String)>,
+    pub clean_cache_completed: Option<(bool, String)>,
+    pub cleanup_old_versions_completed: Option<(bool, String)>,
 }
 
 pub struct AsyncTaskManager {
@@ -128,6 +140,8 @@ impl AsyncTaskManager {
             uninstall_completed: None,
             update_completed: None,
             update_all_completed: None,
+            clean_cache_completed: None,
+            cleanup_old_versions_completed: None,
         };
 
         let mut tasks_to_keep = Vec::new();
@@ -328,6 +342,50 @@ impl AsyncTaskManager {
                     
                     if should_put_back {
                         self.active_task = Some(AsyncTask::UpdateAll { success, logs, message });
+                    }
+                }
+                AsyncTask::CleanCache { success, logs, message } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.clean_cache_completed = Some((succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true
+                    };
+                    
+                    if should_put_back {
+                        self.active_task = Some(AsyncTask::CleanCache { success, logs, message });
+                    }
+                }
+                AsyncTask::CleanupOldVersions { success, logs, message } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.cleanup_old_versions_completed = Some((succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true
+                    };
+                    
+                    if should_put_back {
+                        self.active_task = Some(AsyncTask::CleanupOldVersions { success, logs, message });
                     }
                 }
                 AsyncTask::LoadPackageInfo { .. } => {

@@ -34,6 +34,8 @@ pub struct BrewstyApp {
     loading_uninstall: bool,
     loading_update: bool,
     loading_update_all: bool,
+    loading_clean_cache: bool,
+    loading_cleanup_old_versions: bool,
     
     task_manager: AsyncTaskManager,
     
@@ -78,6 +80,8 @@ impl BrewstyApp {
             loading_uninstall: false,
             loading_update: false,
             loading_update_all: false,
+            loading_clean_cache: false,
+            loading_cleanup_old_versions: false,
             task_manager: AsyncTaskManager::new(),
             use_cases,
             executor,
@@ -533,63 +537,107 @@ impl BrewstyApp {
     }
 
     fn handle_clean_cache(&mut self) {
+        if self.loading_clean_cache {
+            return;
+        }
+        
+        self.loading_clean_cache = true;
         self.loading = true;
         self.status_message = "Cleaning cache...".to_string();
         self.log_manager.push("Cleaning Homebrew cache".to_string());
         tracing::info!("Cleaning Homebrew cache");
 
-        let use_case = Arc::clone(&self.use_cases.clean_cache);
-        let result = self.executor.execute(async {
-            use_case.execute().await
+        let success = Arc::new(Mutex::new(None));
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let message = Arc::new(Mutex::new(String::new()));
+        
+        self.task_manager.set_active_task(AsyncTask::CleanCache {
+            success: Arc::clone(&success),
+            logs: Arc::clone(&logs),
+            message: Arc::clone(&message),
         });
 
-        match result {
-            Ok(_) => {
-                let msg = "Successfully cleaned cache".to_string();
-                self.log_manager.push(msg.clone());
-                tracing::info!("{}", msg);
-                self.status_message = "Cache cleaned successfully".to_string();
-            }
-            Err(e) => {
-                let msg = format!("Error cleaning cache: {}", e);
-                self.log_manager.push(msg.clone());
-                tracing::error!("{}", msg);
-                self.status_message = msg;
-            }
-        }
+        let use_case = Arc::clone(&self.use_cases.clean_cache);
+        
+        thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            
+            let result = rt.block_on(async move {
+                use_case.execute().await
+            });
 
-        self.loading = false;
-        self.cleanup_modal.close();
+            let mut log_vec = Vec::new();
+            match result {
+                Ok(_) => {
+                    let msg = "Successfully cleaned cache".to_string();
+                    log_vec.push(msg.clone());
+                    tracing::info!("{}", msg);
+                    *success.lock().unwrap() = Some(true);
+                    *message.lock().unwrap() = "Cache cleaned successfully".to_string();
+                }
+                Err(e) => {
+                    let msg = format!("Error cleaning cache: {}", e);
+                    log_vec.push(msg.clone());
+                    tracing::error!("{}", msg);
+                    *success.lock().unwrap() = Some(false);
+                    *message.lock().unwrap() = msg;
+                }
+            }
+            
+            *logs.lock().unwrap() = log_vec;
+        });
     }
 
     fn handle_cleanup_old_versions(&mut self) {
+        if self.loading_cleanup_old_versions {
+            return;
+        }
+        
+        self.loading_cleanup_old_versions = true;
         self.loading = true;
         self.status_message = "Cleaning up old versions...".to_string();
         self.log_manager.push("Cleaning up old versions".to_string());
         tracing::info!("Cleaning up old versions");
 
-        let use_case = Arc::clone(&self.use_cases.cleanup_old_versions);
-        let result = self.executor.execute(async {
-            use_case.execute().await
+        let success = Arc::new(Mutex::new(None));
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let message = Arc::new(Mutex::new(String::new()));
+        
+        self.task_manager.set_active_task(AsyncTask::CleanupOldVersions {
+            success: Arc::clone(&success),
+            logs: Arc::clone(&logs),
+            message: Arc::clone(&message),
         });
 
-        match result {
-            Ok(_) => {
-                let msg = "Successfully cleaned up old versions".to_string();
-                self.log_manager.push(msg.clone());
-                tracing::info!("{}", msg);
-                self.status_message = "Old versions cleaned up successfully".to_string();
-            }
-            Err(e) => {
-                let msg = format!("Error cleaning up old versions: {}", e);
-                self.log_manager.push(msg.clone());
-                tracing::error!("{}", msg);
-                self.status_message = msg;
-            }
-        }
+        let use_case = Arc::clone(&self.use_cases.cleanup_old_versions);
+        
+        thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            
+            let result = rt.block_on(async move {
+                use_case.execute().await
+            });
 
-        self.loading = false;
-        self.cleanup_modal.close();
+            let mut log_vec = Vec::new();
+            match result {
+                Ok(_) => {
+                    let msg = "Successfully cleaned up old versions".to_string();
+                    log_vec.push(msg.clone());
+                    tracing::info!("{}", msg);
+                    *success.lock().unwrap() = Some(true);
+                    *message.lock().unwrap() = "Old versions cleaned up successfully".to_string();
+                }
+                Err(e) => {
+                    let msg = format!("Error cleaning up old versions: {}", e);
+                    log_vec.push(msg.clone());
+                    tracing::error!("{}", msg);
+                    *success.lock().unwrap() = Some(false);
+                    *message.lock().unwrap() = msg;
+                }
+            }
+            
+            *logs.lock().unwrap() = log_vec;
+        });
     }
 
     fn handle_search(&mut self) {
@@ -805,6 +853,20 @@ impl BrewstyApp {
                 self.load_installed_packages();
                 self.load_outdated_packages();
             }
+        }
+
+        if let Some((success, message)) = result.clean_cache_completed {
+            self.loading_clean_cache = false;
+            self.loading = false;
+            self.status_message = message;
+            self.cleanup_modal.close();
+        }
+
+        if let Some((success, message)) = result.cleanup_old_versions_completed {
+            self.loading_cleanup_old_versions = false;
+            self.loading = false;
+            self.status_message = message;
+            self.cleanup_modal.close();
         }
 
         self.log_manager.extend(result.logs);
