@@ -26,6 +26,10 @@ impl PackageList {
         }
     }
 
+    pub fn get_package(&self, name: &str) -> Option<Package> {
+        self.packages.iter().find(|p| p.name == name).cloned()
+    }
+
     pub fn get_show_info_action(&mut self) -> Option<Package> {
         self.show_info_action.take()
     }
@@ -109,6 +113,7 @@ impl PackageList {
                         
                         ui.label(package.package_type.to_string());
 
+                        let is_operating = packages_loading_info.contains(&package.name);
                         let status_text = if package.pinned {
                             RichText::new("Pinned").color(Color32::from_rgb(255, 200, 0))
                         } else if package.outdated {
@@ -118,7 +123,12 @@ impl PackageList {
                         } else {
                             RichText::new("Available").color(Color32::GRAY)
                         };
-                        ui.label(status_text);
+                        
+                        if is_operating {
+                            ui.spinner();
+                        } else {
+                            ui.label(status_text);
+                        }
 
                         ui.horizontal(|ui| {
                             if package.installed {

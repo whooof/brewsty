@@ -51,6 +51,18 @@ pub enum AsyncTask {
         logs: Arc<Mutex<Vec<String>>>,
         message: Arc<Mutex<String>>,
     },
+    Pin {
+        package_name: String,
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    Unpin {
+        package_name: String,
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
 }
 
 pub struct TaskResult {
@@ -66,6 +78,8 @@ pub struct TaskResult {
     pub update_all_completed: Option<(bool, String)>,
     pub clean_cache_completed: Option<(bool, String)>,
     pub cleanup_old_versions_completed: Option<(bool, String)>,
+    pub pin_completed: Option<(String, bool, String)>,
+    pub unpin_completed: Option<(String, bool, String)>,
 }
 
 pub struct AsyncTaskManager {
@@ -124,10 +138,6 @@ impl AsyncTaskManager {
         self.pending_package_info_loads.len()
     }
 
-    pub fn get_loading_info(&self) -> &HashSet<String> {
-        &self.packages_loading_info
-    }
-
     pub fn poll(&mut self) -> TaskResult {
         let mut result = TaskResult {
             installed_packages: None,
@@ -142,6 +152,8 @@ impl AsyncTaskManager {
             update_all_completed: None,
             clean_cache_completed: None,
             cleanup_old_versions_completed: None,
+            pin_completed: None,
+            unpin_completed: None,
         };
 
         let mut tasks_to_keep = Vec::new();
@@ -386,6 +398,50 @@ impl AsyncTaskManager {
                     
                     if should_put_back {
                         self.active_task = Some(AsyncTask::CleanupOldVersions { success, logs, message });
+                    }
+                }
+                AsyncTask::Pin { package_name, success, logs, message } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.pin_completed = Some((package_name.clone(), succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true
+                    };
+                    
+                    if should_put_back {
+                        self.active_task = Some(AsyncTask::Pin { package_name, success, logs, message });
+                    }
+                }
+                AsyncTask::Unpin { package_name, success, logs, message } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.unpin_completed = Some((package_name.clone(), succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true
+                    };
+                    
+                    if should_put_back {
+                        self.active_task = Some(AsyncTask::Unpin { package_name, success, logs, message });
                     }
                 }
                 AsyncTask::LoadPackageInfo { .. } => {
