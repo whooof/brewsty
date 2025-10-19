@@ -9,7 +9,8 @@ pub struct LogEntry {
 
 impl LogEntry {
     pub fn format_timestamp(&self) -> String {
-        let timestamp = self.timestamp
+        let timestamp = self
+            .timestamp
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default();
         let hours = (timestamp.as_secs() / 3600) % 24;

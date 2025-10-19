@@ -6,8 +6,8 @@ mod presentation;
 use application::UseCaseContainer;
 use domain::repositories::PackageRepository;
 use infrastructure::brew::BrewPackageRepository;
-use presentation::ui::BrewstyApp;
 use presentation::services::log_capture;
+use presentation::ui::BrewstyApp;
 use std::sync::Arc;
 
 fn main() -> eframe::Result<()> {
@@ -26,8 +26,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Brewsty - Homebrew Package Manager",
         options,
-        Box::new(|_cc| {
-            Ok(Box::new(BrewstyApp::new(use_cases, log_rx)))
-        }),
+        Box::new(|_cc| Ok(Box::new(BrewstyApp::new(use_cases, log_rx)))),
     )
 }

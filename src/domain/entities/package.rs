@@ -29,10 +29,7 @@ pub struct Package {
 }
 
 impl Package {
-    pub fn new(
-        name: String,
-        package_type: PackageType,
-    ) -> Self {
+    pub fn new(name: String, package_type: PackageType) -> Self {
         Self {
             name,
             version: None,

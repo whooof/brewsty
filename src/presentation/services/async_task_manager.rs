@@ -83,7 +83,7 @@ pub struct TaskResult {
 }
 
 pub struct AsyncTaskManager {
-    active_task: Option<AsyncTask>,
+    active_tasks: Vec<AsyncTask>,
     package_info_tasks: Vec<(String, AsyncTask)>,
     packages_loading_info: HashSet<String>,
     pending_package_info_loads: Vec<(String, PackageType)>,
@@ -92,7 +92,7 @@ pub struct AsyncTaskManager {
 impl AsyncTaskManager {
     pub fn new() -> Self {
         Self {
-            active_task: None,
+            active_tasks: Vec::new(),
             package_info_tasks: Vec::new(),
             packages_loading_info: HashSet::new(),
             pending_package_info_loads: Vec::new(),
@@ -100,8 +100,31 @@ impl AsyncTaskManager {
     }
 
     pub fn set_active_task(&mut self, task: AsyncTask) {
-        self.active_task = Some(task);
+        let task_type = match &task {
+            AsyncTask::LoadInstalled { .. } => "LoadInstalled",
+            AsyncTask::LoadOutdated { .. } => "LoadOutdated",
+            AsyncTask::Search { .. } => "Search",
+            _ => "",
+        };
+        
+        if !task_type.is_empty() && self.has_task_type(task_type) {
+            tracing::warn!("{} task is already running, ignoring duplicate", task_type);
+            return;
+        }
+        
+        self.active_tasks.push(task);
     }
+
+    pub fn has_task_type(&self, task_type: &str) -> bool {
+         self.active_tasks.iter().any(|task| {
+             match (task, task_type) {
+                 (AsyncTask::LoadInstalled { .. }, "LoadInstalled") => true,
+                 (AsyncTask::LoadOutdated { .. }, "LoadOutdated") => true,
+                 (AsyncTask::Search { .. }, "Search") => true,
+                 _ => false,
+             }
+         })
+     }
 
     pub fn add_package_info_task(&mut self, package_name: String, task: AsyncTask) {
         self.packages_loading_info.insert(package_name.clone());
@@ -199,7 +222,9 @@ impl AsyncTaskManager {
         
         self.package_info_tasks = tasks_to_keep;
 
-        if let Some(task) = self.active_task.take() {
+        let mut active_tasks_to_keep = Vec::new();
+        
+        for task in self.active_tasks.drain(..) {
             match task {
                 AsyncTask::LoadInstalled { packages, logs } => {
                     let should_put_back = match logs.try_lock() {
@@ -220,7 +245,7 @@ impl AsyncTaskManager {
                     };
                     
                     if should_put_back {
-                        self.active_task = Some(AsyncTask::LoadInstalled { packages, logs });
+                        active_tasks_to_keep.push(AsyncTask::LoadInstalled { packages, logs });
                     }
                 }
                 AsyncTask::LoadOutdated { packages, logs } => {
@@ -242,7 +267,7 @@ impl AsyncTaskManager {
                     };
                     
                     if should_put_back {
-                        self.active_task = Some(AsyncTask::LoadOutdated { packages, logs });
+                        active_tasks_to_keep.push(AsyncTask::LoadOutdated { packages, logs });
                     }
                 }
                 AsyncTask::Search { results, logs } => {
@@ -265,7 +290,7 @@ impl AsyncTaskManager {
                     };
                     
                     if should_put_back {
-                        self.active_task = Some(AsyncTask::Search { results, logs });
+                        active_tasks_to_keep.push(AsyncTask::Search { results, logs });
                     }
                 }
                 AsyncTask::Install { success, logs, message } => {
@@ -287,7 +312,7 @@ impl AsyncTaskManager {
                     };
                     
                     if should_put_back {
-                        self.active_task = Some(AsyncTask::Install { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::Install { success, logs, message });
                     }
                 }
                 AsyncTask::Uninstall { success, logs, message } => {
@@ -309,7 +334,7 @@ impl AsyncTaskManager {
                     };
                     
                     if should_put_back {
-                        self.active_task = Some(AsyncTask::Uninstall { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::Uninstall { success, logs, message });
                     }
                 }
                 AsyncTask::Update { success, logs, message } => {
@@ -331,7 +356,7 @@ impl AsyncTaskManager {
                     };
                     
                     if should_put_back {
-                        self.active_task = Some(AsyncTask::Update { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::Update { success, logs, message });
                     }
                 }
                 AsyncTask::UpdateAll { success, logs, message } => {
@@ -353,7 +378,7 @@ impl AsyncTaskManager {
                     };
                     
                     if should_put_back {
-                        self.active_task = Some(AsyncTask::UpdateAll { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::UpdateAll { success, logs, message });
                     }
                 }
                 AsyncTask::CleanCache { success, logs, message } => {
@@ -375,7 +400,7 @@ impl AsyncTaskManager {
                     };
                     
                     if should_put_back {
-                        self.active_task = Some(AsyncTask::CleanCache { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::CleanCache { success, logs, message });
                     }
                 }
                 AsyncTask::CleanupOldVersions { success, logs, message } => {
@@ -397,7 +422,7 @@ impl AsyncTaskManager {
                     };
                     
                     if should_put_back {
-                        self.active_task = Some(AsyncTask::CleanupOldVersions { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::CleanupOldVersions { success, logs, message });
                     }
                 }
                 AsyncTask::Pin { package_name, success, logs, message } => {
@@ -419,7 +444,7 @@ impl AsyncTaskManager {
                     };
                     
                     if should_put_back {
-                        self.active_task = Some(AsyncTask::Pin { package_name, success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::Pin { package_name, success, logs, message });
                     }
                 }
                 AsyncTask::Unpin { package_name, success, logs, message } => {
@@ -441,13 +466,15 @@ impl AsyncTaskManager {
                     };
                     
                     if should_put_back {
-                        self.active_task = Some(AsyncTask::Unpin { package_name, success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::Unpin { package_name, success, logs, message });
                     }
                 }
                 AsyncTask::LoadPackageInfo { .. } => {
                 }
             }
         }
+        
+        self.active_tasks = active_tasks_to_keep;
 
         result
     }

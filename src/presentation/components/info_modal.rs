@@ -63,7 +63,7 @@ impl InfoModal {
                         }
                     });
                 });
-            
+
             if !open {
                 self.close();
             }
