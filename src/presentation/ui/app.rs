@@ -244,7 +244,6 @@ impl BrewstyApp {
         self.packages_in_operation.insert(package_name.clone());
         self.status_message = format!("Installing {}...", package.name);
         
-        let package_name = package.name.clone();
         let package_type = package.package_type.clone();
         let initial_msg = format!("Installing package: {} ({:?})", package_name, package_type);
         self.log_manager.push(initial_msg.clone());
@@ -302,7 +301,7 @@ impl BrewstyApp {
         self.packages_in_operation.insert(package_name.clone());
         self.status_message = format!("Uninstalling {}...", package.name);
         
-        let package_name = package.name.clone();
+        
         let package_type = package.package_type.clone();
         let initial_msg = format!("Uninstalling package: {} ({:?})", package_name, package_type);
         self.log_manager.push(initial_msg.clone());
@@ -360,7 +359,6 @@ impl BrewstyApp {
         self.packages_in_operation.insert(package_name.clone());
         self.status_message = format!("Updating {}...", package.name);
         
-        let package_name = package.name.clone();
         let package_type = package.package_type.clone();
         let initial_msg = format!("Updating package: {} ({:?})", package_name, package_type);
         self.log_manager.push(initial_msg.clone());
