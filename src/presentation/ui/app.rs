@@ -260,11 +260,10 @@ impl BrewstyApp {
         });
 
         let use_case = Arc::clone(&self.use_cases.install);
+        let executor = self.executor.clone();
         
         thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            
-            let result = rt.block_on(async move {
+            let result = executor.execute(async move {
                 use_case.execute(package).await
             });
 
@@ -316,11 +315,10 @@ impl BrewstyApp {
         });
 
         let use_case = Arc::clone(&self.use_cases.uninstall);
+        let executor = self.executor.clone();
         
         thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            
-            let result = rt.block_on(async move {
+            let result = executor.execute(async move {
                 use_case.execute(package).await
             });
 
@@ -372,11 +370,10 @@ impl BrewstyApp {
         });
 
         let use_case = Arc::clone(&self.use_cases.update);
+        let executor = self.executor.clone();
         
         thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            
-            let result = rt.block_on(async move {
+            let result = executor.execute(async move {
                 use_case.execute(package).await
             });
 
@@ -472,11 +469,10 @@ impl BrewstyApp {
         });
 
         let use_case = Arc::clone(&self.use_cases.update_all);
+        let executor = self.executor.clone();
         
         thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            
-            let result = rt.block_on(async move {
+            let result = executor.execute(async move {
                 use_case.execute().await
             });
 
@@ -558,11 +554,10 @@ impl BrewstyApp {
         });
 
         let use_case = Arc::clone(&self.use_cases.clean_cache);
+        let executor = self.executor.clone();
         
         thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            
-            let result = rt.block_on(async move {
+            let result = executor.execute(async move {
                 use_case.execute().await
             });
 
@@ -610,11 +605,10 @@ impl BrewstyApp {
         });
 
         let use_case = Arc::clone(&self.use_cases.cleanup_old_versions);
+        let executor = self.executor.clone();
         
         thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            
-            let result = rt.block_on(async move {
+            let result = executor.execute(async move {
                 use_case.execute().await
             });
 
@@ -855,14 +849,14 @@ impl BrewstyApp {
             }
         }
 
-        if let Some((success, message)) = result.clean_cache_completed {
+        if let Some((_success, message)) = result.clean_cache_completed {
             self.loading_clean_cache = false;
             self.loading = false;
             self.status_message = message;
             self.cleanup_modal.close();
         }
 
-        if let Some((success, message)) = result.cleanup_old_versions_completed {
+        if let Some((_success, message)) = result.cleanup_old_versions_completed {
             self.loading_cleanup_old_versions = false;
             self.loading = false;
             self.status_message = message;
