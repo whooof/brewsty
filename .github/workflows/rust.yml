@@ -19,25 +19,26 @@ jobs:
     - name: Check
       run: cargo check --verbose
 
-   build:
-     if: github.event_name == 'push'
-     runs-on: ubuntu-latest
-     steps:
-     - uses: actions/checkout@v4
-     - name: Build
-       run: cargo build --verbose
-     - name: Run tests
-       run: cargo test --verbose
+  build:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build
+      run: cargo build --verbose
+    - name: Run tests
+      run: cargo test --verbose
 
-   release-macos-arm64:
-     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/main'))
-     runs-on: macos-latest
-     steps:
-     - uses: actions/checkout@v4
-     - name: Rust Release binary
-       uses: rust-build/rust-build.action@v1.4.5
-       with:
-         RUSTTARGET: aarch64-apple-darwin
-         MINIFY: true
-         UPLOAD_MODE: release
+  release-macos-arm64:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Rust Release binary
+      uses: rust-build/rust-build.action@v1.4.5
+      with:
+        RUSTTARGET: aarch64-apple-darwin
+        MINIFY: true
+        UPLOAD_MODE: release
+
 
