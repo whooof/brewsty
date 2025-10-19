@@ -1,4 +1,4 @@
-# Brusty - Project Overview
+# Brewsty - Project Overview
 
 ## ✅ What's Been Created
 
@@ -81,7 +81,7 @@ The GUI will launch with tabs for:
 ## 📁 Project Structure
 
 ```
-brusty/
+brewsty/
 ├── Cargo.toml              # Dependencies and project config
 ├── README.md               # Project documentation
 ├── src/

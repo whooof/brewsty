@@ -1,4 +1,4 @@
-# Brusty 🍺
+# Brewsty 🍺
 
 A modern, GUI-based Homebrew package manager for macOS written in Rust.
 
@@ -22,7 +22,7 @@ A modern, GUI-based Homebrew package manager for macOS written in Rust.
 
 ## Architecture
 
-Brusty follows clean architecture principles with SOLID design:
+Brewsty follows clean architecture principles with SOLID design:
 
 ```
 src/
@@ -57,8 +57,8 @@ src/
 ## Installation
 
 ```bash
-git clone https://github.com/yourusername/brusty.git
-cd brusty
+git clone https://github.com/yourusername/brewsty.git
+cd brewsty
 cargo build --release
 ```
 

@@ -1,3 +1,3 @@
 pub mod app;
 
-pub use app::BrustyApp;
+pub use app::BrewstyApp;

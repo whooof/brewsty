@@ -9,7 +9,7 @@ use crate::presentation::services::{
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-pub struct BrustyApp {
+pub struct BrewstyApp {
     tab_manager: TabManager,
     filter_state: FilterState,
     cleanup_modal: CleanupModal,
@@ -37,7 +37,7 @@ pub struct BrustyApp {
     status_message: String,
 }
 
-impl BrustyApp {
+impl BrewstyApp {
     pub fn new(use_cases: Arc<UseCaseContainer>) -> Self {
         let executor = AsyncExecutor::new();
         
@@ -598,7 +598,7 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-impl eframe::App for BrustyApp {
+impl eframe::App for BrewstyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_async_tasks();
         ctx.request_repaint();
@@ -610,7 +610,7 @@ impl eframe::App for BrustyApp {
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.heading("🍺 Brusty");
+                ui.heading("🍺 Brewsty");
                 ui.label("v0.1.0");
                 ui.separator();
                 

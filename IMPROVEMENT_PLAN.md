@@ -1,4 +1,4 @@
-# Brusty - Architecture Improvement Plan
+# Brewsty - Architecture Improvement Plan
 
 ## Overview
 This document outlines comprehensive improvements to enhance DI, components, DRY, SOLID principles, and code hierarchy.
@@ -7,7 +7,7 @@ This document outlines comprehensive improvements to enhance DI, components, DRY
 
 ### 1. Dependency Injection (DI) Issues
 **Problems:**
-- ❌ 10 use case parameters in `BrustyApp::new()` - excessive constructor injection
+- ❌ 10 use case parameters in `BrewstyApp::new()` - excessive constructor injection
 - ❌ Runtime created in struct instead of injected
 - ❌ Each use case creates threads/runtimes independently
 
@@ -24,7 +24,7 @@ This document outlines comprehensive improvements to enhance DI, components, DRY
 ### 3. SOLID Violations
 
 #### Single Responsibility Principle (SRP):
-- ❌ `BrustyApp` has **8+ responsibilities**:
+- ❌ `BrewstyApp` has **8+ responsibilities**:
   - UI rendering
   - Async task management
   - State management
@@ -33,10 +33,10 @@ This document outlines comprehensive improvements to enhance DI, components, DRY
   - Filtering
   - Cleanup operations
   - Search functionality
-- ✅ **Should be:** `BrustyApp` only coordinates, delegates to specialized components
+- ✅ **Should be:** `BrewstyApp` only coordinates, delegates to specialized components
 
 #### Open/Closed Principle:
-- ❌ Adding new tabs requires modifying `BrustyApp`
+- ❌ Adding new tabs requires modifying `BrewstyApp`
 - ✅ **Should use:** Tab trait/registry pattern
 
 #### Dependency Inversion:
@@ -110,7 +110,7 @@ pub struct UseCaseContainer {
 ```
 
 **Benefits:**
-- Reduces `BrustyApp::new()` from 10 parameters to 1
+- Reduces `BrewstyApp::new()` from 10 parameters to 1
 - Easier to add new use cases
 - Better encapsulation
 
@@ -304,7 +304,7 @@ src/application/use_cases/
 Custom error types for better error handling:
 ```rust
 #[derive(Debug, thiserror::Error)]
-pub enum BrustyError {
+pub enum BrewstyError {
     #[error("Package not found: {0}")]
     PackageNotFound(String),
     
