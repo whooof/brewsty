@@ -36,6 +36,10 @@ impl LogManager {
             .into_iter()
             .rev()
     }
+
+    pub fn all_logs(&self) -> Vec<&String> {
+        self.logs.iter().collect()
+    }
 }
 
 impl Default for LogManager {

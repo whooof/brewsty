@@ -676,11 +676,14 @@ impl eframe::App for BrewstyApp {
                         self.load_outdated_packages();
                     }
                 }
-                if ui.selectable_label(self.tab_manager.is_current(Tab::Browse), "Browse").clicked() {
-                    self.tab_manager.switch_to(Tab::Browse);
+                if ui.selectable_label(self.tab_manager.is_current(Tab::SearchInstall), "Search & Install").clicked() {
+                    self.tab_manager.switch_to(Tab::SearchInstall);
                 }
-                if ui.selectable_label(self.tab_manager.is_current(Tab::Maintenance), "Maintenance").clicked() {
-                    self.tab_manager.switch_to(Tab::Maintenance);
+                if ui.selectable_label(self.tab_manager.is_current(Tab::Settings), "Settings").clicked() {
+                    self.tab_manager.switch_to(Tab::Settings);
+                }
+                if ui.selectable_label(self.tab_manager.is_current(Tab::Output), "Output").clicked() {
+                    self.tab_manager.switch_to(Tab::Output);
                 }
             });
         });
@@ -693,19 +696,6 @@ impl eframe::App for BrewstyApp {
                 }
                 ui.label(&self.status_message);
             });
-            
-            ui.separator();
-            
-            ui.label("Output:");
-            egui::ScrollArea::vertical()
-                .max_height(100.0)
-                .stick_to_bottom(true)
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    for line in self.log_manager.recent() {
-                        ui.label(line);
-                    }
-                });
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -834,7 +824,7 @@ impl eframe::App for BrewstyApp {
                     }
                 }
 
-                Tab::Browse => {
+                Tab::SearchInstall => {
                     ui.horizontal(|ui| {
                         ui.label("Search:");
                         let response = ui.text_edit_singleline(self.filter_state.search_query_mut());
@@ -904,8 +894,8 @@ impl eframe::App for BrewstyApp {
                     }
                 }
 
-                Tab::Maintenance => {
-                    ui.heading("Maintenance Operations");
+                Tab::Settings => {
+                    ui.heading("Settings & Maintenance");
                     ui.separator();
 
                     ui.vertical_centered(|ui| {
@@ -928,6 +918,25 @@ impl eframe::App for BrewstyApp {
                         }
                         ui.label("Update all installed packages");
                     });
+                }
+
+                Tab::Output => {
+                    ui.heading("Command Output");
+                    ui.separator();
+                    
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false; 2])
+                        .stick_to_bottom(true)
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            
+                            for (index, line) in self.log_manager.all_logs().iter().enumerate() {
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new(format!("[{}]", index + 1)).color(egui::Color32::GRAY).monospace());
+                                    ui.monospace(line.as_str());
+                                });
+                            }
+                        });
                 }
             }
 

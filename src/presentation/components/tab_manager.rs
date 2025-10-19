@@ -4,8 +4,9 @@ use std::collections::HashMap;
 pub enum Tab {
     Installed,
     Outdated,
-    Browse,
-    Maintenance,
+    SearchInstall,
+    Settings,
+    Output,
 }
 
 pub struct TabState {
@@ -28,8 +29,9 @@ impl TabManager {
         let mut tab_states = HashMap::new();
         tab_states.insert(Tab::Installed, TabState::new());
         tab_states.insert(Tab::Outdated, TabState::new());
-        tab_states.insert(Tab::Browse, TabState::new());
-        tab_states.insert(Tab::Maintenance, TabState::new());
+        tab_states.insert(Tab::SearchInstall, TabState::new());
+        tab_states.insert(Tab::Settings, TabState::new());
+        tab_states.insert(Tab::Output, TabState::new());
 
         Self {
             current_tab: Tab::Installed,
