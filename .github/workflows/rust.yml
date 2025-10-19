@@ -29,16 +29,6 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
 
-  release-macos-arm64:
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
-    runs-on: macos-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Rust Release binary
-      uses: rust-build/rust-build.action@v1.4.5
-      with:
-        RUSTTARGET: aarch64-apple-darwin
-        MINIFY: true
-        UPLOAD_MODE: release
+
 
 
