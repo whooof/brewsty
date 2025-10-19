@@ -102,8 +102,11 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-MIT
+MIT License (Tortilla Edition 🌯)
+
+See [LICENSE.md](LICENSE.md) for details.
 
 ## Acknowledgments
 
 Built with [egui](https://github.com/emilk/egui) by [@emilk](https://github.com/emilk)
+
