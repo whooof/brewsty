@@ -725,6 +725,8 @@ impl eframe::App for BrewstyApp {
                         let mut update_action = None;
                         let mut pin_action = None;
                         let mut unpin_action = None;
+                        let mut load_info_action = None;
+                        let empty_loading_set = std::collections::HashSet::new();
 
                         self.installed_packages.show_filtered_with_search_and_pin(
                             ui,
@@ -734,8 +736,8 @@ impl eframe::App for BrewstyApp {
                             self.filter_state.show_formulae(),
                             self.filter_state.show_casks(),
                             self.filter_state.installed_search_query(),
-                            &mut None,
-                            &std::collections::HashSet::new(),
+                            &mut load_info_action,
+                            &empty_loading_set,
                             &mut pin_action,
                             &mut unpin_action,
                         );
@@ -785,6 +787,8 @@ impl eframe::App for BrewstyApp {
                         let mut update_action = None;
                         let mut pin_action = None;
                         let mut unpin_action = None;
+                        let mut load_info_action = None;
+                        let empty_loading_set = std::collections::HashSet::new();
 
                         self.outdated_packages.show_filtered_with_search_and_pin(
                             ui,
@@ -794,8 +798,8 @@ impl eframe::App for BrewstyApp {
                             self.filter_state.show_formulae(),
                             self.filter_state.show_casks(),
                             "",
-                            &mut None,
-                            &std::collections::HashSet::new(),
+                            &mut load_info_action,
+                            &empty_loading_set,
                             &mut pin_action,
                             &mut unpin_action,
                         );
