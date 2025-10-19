@@ -7,10 +7,11 @@ use application::UseCaseContainer;
 use domain::repositories::PackageRepository;
 use infrastructure::brew::BrewPackageRepository;
 use presentation::ui::BrewstyApp;
+use presentation::services::log_capture;
 use std::sync::Arc;
 
 fn main() -> eframe::Result<()> {
-    tracing_subscriber::fmt::init();
+    let log_rx = log_capture::init_log_capture();
 
     let repository: Arc<dyn PackageRepository> = Arc::new(BrewPackageRepository::new());
     let use_cases = Arc::new(UseCaseContainer::new(repository));
@@ -26,7 +27,7 @@ fn main() -> eframe::Result<()> {
         "Brewsty - Homebrew Package Manager",
         options,
         Box::new(|_cc| {
-            Ok(Box::new(BrewstyApp::new(use_cases)))
+            Ok(Box::new(BrewstyApp::new(use_cases, log_rx)))
         }),
     )
 }

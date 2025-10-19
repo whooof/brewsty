@@ -6,7 +6,7 @@ pub enum Tab {
     Outdated,
     SearchInstall,
     Settings,
-    Output,
+    Log,
 }
 
 pub struct TabState {
@@ -31,7 +31,7 @@ impl TabManager {
         tab_states.insert(Tab::Outdated, TabState::new());
         tab_states.insert(Tab::SearchInstall, TabState::new());
         tab_states.insert(Tab::Settings, TabState::new());
-        tab_states.insert(Tab::Output, TabState::new());
+        tab_states.insert(Tab::Log, TabState::new());
 
         Self {
             current_tab: Tab::Installed,

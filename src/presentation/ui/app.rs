@@ -7,6 +7,7 @@ use crate::presentation::services::{
     AsyncExecutor, AsyncTask, AsyncTaskManager, PackageOperationHandler
 };
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::Receiver;
 use std::thread;
 
 pub struct BrewstyApp {
@@ -15,6 +16,7 @@ pub struct BrewstyApp {
     cleanup_modal: CleanupModal,
     info_modal: InfoModal,
     log_manager: LogManager,
+    log_rx: Receiver<String>,
     
     installed_packages: PackageList,
     outdated_packages: PackageList,
@@ -40,7 +42,7 @@ pub struct BrewstyApp {
 }
 
 impl BrewstyApp {
-    pub fn new(use_cases: Arc<UseCaseContainer>) -> Self {
+    pub fn new(use_cases: Arc<UseCaseContainer>, log_rx: Receiver<String>) -> Self {
         let executor = AsyncExecutor::new();
         
         let package_ops = PackageOperationHandler::new(
@@ -58,6 +60,7 @@ impl BrewstyApp {
             cleanup_modal: CleanupModal::new(),
             info_modal: InfoModal::new(),
             log_manager: LogManager::new(),
+            log_rx,
             installed_packages: PackageList::new(),
             outdated_packages: PackageList::new(),
             search_results: PackageList::new(),
@@ -634,6 +637,12 @@ impl BrewstyApp {
             ui.label(message);
         });
     }
+    
+    fn poll_logs(&mut self) {
+        while let Ok(log_entry) = self.log_rx.try_recv() {
+            self.log_manager.push(log_entry);
+        }
+    }
 }
 
 fn format_size(bytes: u64) -> String {
@@ -654,6 +663,7 @@ fn format_size(bytes: u64) -> String {
 
 impl eframe::App for BrewstyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.poll_logs();
         self.poll_async_tasks();
         ctx.request_repaint();
         
@@ -686,8 +696,8 @@ impl eframe::App for BrewstyApp {
                 if ui.selectable_label(self.tab_manager.is_current(Tab::Settings), "Settings").clicked() {
                     self.tab_manager.switch_to(Tab::Settings);
                 }
-                if ui.selectable_label(self.tab_manager.is_current(Tab::Output), "Output").clicked() {
-                    self.tab_manager.switch_to(Tab::Output);
+                if ui.selectable_label(self.tab_manager.is_current(Tab::Log), "Log").clicked() {
+                    self.tab_manager.switch_to(Tab::Log);
                 }
             });
         });
@@ -713,15 +723,8 @@ impl eframe::App for BrewstyApp {
                         ui.set_width(ui.available_width());
                         
                         for entry in self.log_manager.all_logs() {
-                            let timestamp = entry.timestamp
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default();
-                            let hours = (timestamp.as_secs() / 3600) % 24;
-                            let minutes = (timestamp.as_secs() / 60) % 60;
-                            let seconds = timestamp.as_secs() % 60;
-                            
                             ui.horizontal(|ui| {
-                                ui.label(egui::RichText::new(format!("[{:02}:{:02}:{:02}]", hours, minutes, seconds))
+                                ui.label(egui::RichText::new(format!("[{}]", entry.format_timestamp()))
                                     .color(egui::Color32::GRAY).monospace());
                                 ui.monospace(&entry.message);
                             });
@@ -962,8 +965,8 @@ impl eframe::App for BrewstyApp {
                     });
                 }
 
-                Tab::Output => {
-                    ui.heading("Command Output");
+                Tab::Log => {
+                    ui.heading("Command Log");
                     ui.separator();
                     
                     egui::ScrollArea::vertical()
@@ -972,15 +975,11 @@ impl eframe::App for BrewstyApp {
                         .show(ui, |ui| {
                             ui.set_width(ui.available_width());
                             
-                            for line in self.log_manager.all_logs() {
-                                let timestamp = line.timestamp
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .map(|d| format!("{:.3}s", d.as_secs_f64()))
-                                    .unwrap_or_else(|_| "??:??".to_string());
-                                
+                            for entry in self.log_manager.all_logs() {
                                 ui.horizontal(|ui| {
-                                    ui.label(egui::RichText::new(format!("[{}]", timestamp)).color(egui::Color32::GRAY).monospace());
-                                    ui.monospace(&line.message);
+                                    ui.label(egui::RichText::new(format!("[{}]", entry.format_timestamp()))
+                                        .color(egui::Color32::GRAY).monospace());
+                                    ui.monospace(&entry.message);
                                 });
                             }
                         });

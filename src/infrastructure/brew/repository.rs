@@ -193,32 +193,68 @@ impl PackageRepository for BrewPackageRepository {
         let name = package.name.clone();
         let package_type = package.package_type.clone();
 
-        tokio::task::spawn_blocking(move || match package_type {
+        let output = tokio::task::spawn_blocking(move || match package_type {
             PackageType::Formula => BrewCommand::install_formula(&name),
             PackageType::Cask => BrewCommand::install_cask(&name),
         })
-        .await?
+        .await??;
+
+        if !output.stdout.is_empty() {
+            tracing::info!("brew output: {}", output.stdout);
+        }
+        if !output.stderr.is_empty() {
+            tracing::info!("brew stderr: {}", output.stderr);
+        }
+
+        Ok(())
     }
 
     async fn uninstall_package(&self, package: &Package) -> Result<()> {
         let name = package.name.clone();
         let package_type = package.package_type.clone();
 
-        tokio::task::spawn_blocking(move || match package_type {
+        let output = tokio::task::spawn_blocking(move || match package_type {
             PackageType::Formula => BrewCommand::uninstall_formula(&name),
             PackageType::Cask => BrewCommand::uninstall_cask(&name),
         })
-        .await?
+        .await??;
+
+        if !output.stdout.is_empty() {
+            tracing::info!("brew output: {}", output.stdout);
+        }
+        if !output.stderr.is_empty() {
+            tracing::info!("brew stderr: {}", output.stderr);
+        }
+
+        Ok(())
     }
 
     async fn update_package(&self, package: &Package) -> Result<()> {
         let name = package.name.clone();
 
-        tokio::task::spawn_blocking(move || BrewCommand::upgrade_package(&name)).await?
+        let output = tokio::task::spawn_blocking(move || BrewCommand::upgrade_package(&name)).await??;
+
+        if !output.stdout.is_empty() {
+            tracing::info!("brew output: {}", output.stdout);
+        }
+        if !output.stderr.is_empty() {
+            tracing::info!("brew stderr: {}", output.stderr);
+        }
+
+        Ok(())
     }
 
     async fn update_all(&self) -> Result<()> {
-        tokio::task::spawn_blocking(|| BrewCommand::upgrade_all()).await?
+        let output = tokio::task::spawn_blocking(|| BrewCommand::upgrade_all()).await??;
+
+        if !output.stdout.is_empty() {
+            tracing::info!("brew output: {}", output.stdout);
+        }
+        if !output.stderr.is_empty() {
+            tracing::info!("brew stderr: {}", output.stderr);
+        }
+
+        Ok(())
     }
 
     async fn get_cleanup_preview(&self) -> Result<CleanupPreview> {
@@ -232,11 +268,29 @@ impl PackageRepository for BrewPackageRepository {
     }
 
     async fn clean_cache(&self) -> Result<()> {
-        tokio::task::spawn_blocking(|| BrewCommand::cleanup()).await?
+        let output = tokio::task::spawn_blocking(|| BrewCommand::cleanup()).await??;
+
+        if !output.stdout.is_empty() {
+            tracing::info!("brew output: {}", output.stdout);
+        }
+        if !output.stderr.is_empty() {
+            tracing::info!("brew stderr: {}", output.stderr);
+        }
+
+        Ok(())
     }
 
     async fn cleanup_old_versions(&self) -> Result<()> {
-        tokio::task::spawn_blocking(|| BrewCommand::cleanup_old_versions()).await?
+        let output = tokio::task::spawn_blocking(|| BrewCommand::cleanup_old_versions()).await??;
+
+        if !output.stdout.is_empty() {
+            tracing::info!("brew output: {}", output.stdout);
+        }
+        if !output.stderr.is_empty() {
+            tracing::info!("brew stderr: {}", output.stderr);
+        }
+
+        Ok(())
     }
 
     async fn search_packages(&self, query: &str, package_type: PackageType) -> Result<Vec<Package>> {
@@ -328,11 +382,29 @@ impl PackageRepository for BrewPackageRepository {
 
     async fn pin_package(&self, package: &Package) -> Result<()> {
         let name = package.name.clone();
-        tokio::task::spawn_blocking(move || BrewCommand::pin_package(&name)).await?
+        let output = tokio::task::spawn_blocking(move || BrewCommand::pin_package(&name)).await??;
+
+        if !output.stdout.is_empty() {
+            tracing::info!("brew output: {}", output.stdout);
+        }
+        if !output.stderr.is_empty() {
+            tracing::info!("brew stderr: {}", output.stderr);
+        }
+
+        Ok(())
     }
 
-    async fn unpin_package(&self, package: &Package) -> Result<()> {
-        let name = package.name.clone();
-        tokio::task::spawn_blocking(move || BrewCommand::unpin_package(&name)).await?
-    }
+     async fn unpin_package(&self, package: &Package) -> Result<()> {
+         let name = package.name.clone();
+         let output = tokio::task::spawn_blocking(move || BrewCommand::unpin_package(&name)).await??;
+ 
+         if !output.stdout.is_empty() {
+             tracing::info!("brew output: {}", output.stdout);
+         }
+         if !output.stderr.is_empty() {
+             tracing::info!("brew stderr: {}", output.stderr);
+         }
+ 
+         Ok(())
+     }
 }

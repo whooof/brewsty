@@ -7,6 +7,18 @@ pub struct LogEntry {
     pub timestamp: std::time::SystemTime,
 }
 
+impl LogEntry {
+    pub fn format_timestamp(&self) -> String {
+        let timestamp = self.timestamp
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        let hours = (timestamp.as_secs() / 3600) % 24;
+        let minutes = (timestamp.as_secs() / 60) % 60;
+        let seconds = timestamp.as_secs() % 60;
+        format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+    }
+}
+
 pub struct LogManager {
     logs: VecDeque<LogEntry>,
 }

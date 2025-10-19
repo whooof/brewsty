@@ -1,6 +1,11 @@
 use anyhow::{anyhow, Result};
 use std::process::Command;
 
+pub struct BrewOutput {
+    pub stdout: String,
+    pub stderr: String,
+}
+
 pub struct BrewCommand;
 
 impl BrewCommand {
@@ -88,76 +93,94 @@ impl BrewCommand {
         Ok(String::from_utf8(output.stdout)?)
     }
 
-    pub fn install_formula(name: &str) -> Result<()> {
+    pub fn install_formula(name: &str) -> Result<BrewOutput> {
         let output = Command::new("brew")
             .args(["install", "--formula", name])
             .output()?;
 
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+
         if !output.status.success() {
-            return Err(anyhow!("Failed to install formula: {}", String::from_utf8_lossy(&output.stderr)));
+            return Err(anyhow!("Failed to install formula: {}", stderr));
         }
 
-        Ok(())
+        Ok(BrewOutput { stdout, stderr })
     }
 
-    pub fn install_cask(name: &str) -> Result<()> {
+    pub fn install_cask(name: &str) -> Result<BrewOutput> {
         let output = Command::new("brew")
             .args(["install", "--cask", name])
             .output()?;
 
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+
         if !output.status.success() {
-            return Err(anyhow!("Failed to install cask: {}", String::from_utf8_lossy(&output.stderr)));
+            return Err(anyhow!("Failed to install cask: {}", stderr));
         }
 
-        Ok(())
+        Ok(BrewOutput { stdout, stderr })
     }
 
-    pub fn uninstall_formula(name: &str) -> Result<()> {
+    pub fn uninstall_formula(name: &str) -> Result<BrewOutput> {
         let output = Command::new("brew")
             .args(["uninstall", "--formula", name])
             .output()?;
 
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+
         if !output.status.success() {
-            return Err(anyhow!("Failed to uninstall formula: {}", String::from_utf8_lossy(&output.stderr)));
+            return Err(anyhow!("Failed to uninstall formula: {}", stderr));
         }
 
-        Ok(())
+        Ok(BrewOutput { stdout, stderr })
     }
 
-    pub fn uninstall_cask(name: &str) -> Result<()> {
+    pub fn uninstall_cask(name: &str) -> Result<BrewOutput> {
         let output = Command::new("brew")
             .args(["uninstall", "--cask", name])
             .output()?;
 
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+
         if !output.status.success() {
-            return Err(anyhow!("Failed to uninstall cask: {}", String::from_utf8_lossy(&output.stderr)));
+            return Err(anyhow!("Failed to uninstall cask: {}", stderr));
         }
 
-        Ok(())
+        Ok(BrewOutput { stdout, stderr })
     }
 
-    pub fn upgrade_package(name: &str) -> Result<()> {
+    pub fn upgrade_package(name: &str) -> Result<BrewOutput> {
         let output = Command::new("brew")
             .args(["upgrade", name])
             .output()?;
 
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+
         if !output.status.success() {
-            return Err(anyhow!("Failed to upgrade package: {}", String::from_utf8_lossy(&output.stderr)));
+            return Err(anyhow!("Failed to upgrade package: {}", stderr));
         }
 
-        Ok(())
+        Ok(BrewOutput { stdout, stderr })
     }
 
-    pub fn upgrade_all() -> Result<()> {
+    pub fn upgrade_all() -> Result<BrewOutput> {
         let output = Command::new("brew")
             .args(["upgrade"])
             .output()?;
 
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+
         if !output.status.success() {
-            return Err(anyhow!("Failed to upgrade all: {}", String::from_utf8_lossy(&output.stderr)));
+            return Err(anyhow!("Failed to upgrade all: {}", stderr));
         }
 
-        Ok(())
+        Ok(BrewOutput { stdout, stderr })
     }
 
     pub fn cleanup_dry_run() -> Result<String> {
@@ -172,16 +195,19 @@ impl BrewCommand {
         Ok(String::from_utf8(output.stdout)?)
     }
 
-    pub fn cleanup() -> Result<()> {
+    pub fn cleanup() -> Result<BrewOutput> {
         let output = Command::new("brew")
             .args(["cleanup", "-s"])
             .output()?;
 
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+
         if !output.status.success() {
-            return Err(anyhow!("Failed to cleanup: {}", String::from_utf8_lossy(&output.stderr)));
+            return Err(anyhow!("Failed to cleanup: {}", stderr));
         }
 
-        Ok(())
+        Ok(BrewOutput { stdout, stderr })
     }
 
     pub fn cleanup_old_versions_dry_run() -> Result<String> {
@@ -196,16 +222,19 @@ impl BrewCommand {
         Ok(String::from_utf8(output.stdout)?)
     }
 
-    pub fn cleanup_old_versions() -> Result<()> {
+    pub fn cleanup_old_versions() -> Result<BrewOutput> {
         let output = Command::new("brew")
             .args(["cleanup", "--prune=all"])
             .output()?;
 
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+
         if !output.status.success() {
-            return Err(anyhow!("Failed to cleanup old versions: {}", String::from_utf8_lossy(&output.stderr)));
+            return Err(anyhow!("Failed to cleanup old versions: {}", stderr));
         }
 
-        Ok(())
+        Ok(BrewOutput { stdout, stderr })
     }
 
     pub fn search_formula(query: &str) -> Result<String> {
@@ -244,27 +273,33 @@ impl BrewCommand {
         Ok(String::from_utf8(output.stdout)?)
     }
 
-    pub fn pin_package(name: &str) -> Result<()> {
+    pub fn pin_package(name: &str) -> Result<BrewOutput> {
         let output = Command::new("brew")
             .args(["pin", name])
             .output()?;
 
-        if !output.status.success() {
-            return Err(anyhow!("Failed to pin package: {}", String::from_utf8_lossy(&output.stderr)));
-        }
-
-        Ok(())
-    }
-
-    pub fn unpin_package(name: &str) -> Result<()> {
-        let output = Command::new("brew")
-            .args(["unpin", name])
-            .output()?;
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
 
         if !output.status.success() {
-            return Err(anyhow!("Failed to unpin package: {}", String::from_utf8_lossy(&output.stderr)));
+            return Err(anyhow!("Failed to pin package: {}", stderr));
         }
 
-        Ok(())
+        Ok(BrewOutput { stdout, stderr })
     }
+
+     pub fn unpin_package(name: &str) -> Result<BrewOutput> {
+         let output = Command::new("brew")
+             .args(["unpin", name])
+             .output()?;
+ 
+         let stdout = String::from_utf8(output.stdout)?;
+         let stderr = String::from_utf8(output.stderr)?;
+ 
+         if !output.status.success() {
+             return Err(anyhow!("Failed to unpin package: {}", stderr));
+         }
+ 
+         Ok(BrewOutput { stdout, stderr })
+     }
 }
