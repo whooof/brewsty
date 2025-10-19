@@ -1128,17 +1128,22 @@ impl eframe::App for BrewstyApp {
                     .stick_to_bottom(true)
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
-
-                        for entry in self.log_manager.all_logs() {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new(format!("[{}]", entry.format_timestamp()))
-                                        .color(egui::Color32::GRAY)
-                                        .monospace(),
-                                );
-                                ui.monospace(&entry.message);
-                            });
-                        }
+                        ui.visuals_mut().override_text_color = Some(egui::Color32::from_rgb(0, 255, 0));
+                        let bg_frame = egui::Frame::default()
+                            .fill(egui::Color32::BLACK)
+                            .inner_margin(8.0);
+                        bg_frame.show(ui, |ui| {
+                            for entry in self.log_manager.all_logs_reversed() {
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!("[{}]", entry.format_timestamp()))
+                                            .color(egui::Color32::GRAY)
+                                            .monospace(),
+                                    );
+                                    ui.monospace(&entry.message);
+                                });
+                            }
+                        });
                     });
 
                 self.output_panel_height = ui.min_rect().height();

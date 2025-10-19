@@ -50,6 +50,10 @@ impl LogManager {
     pub fn all_logs(&self) -> impl Iterator<Item = &LogEntry> {
         self.logs.iter()
     }
+
+    pub fn all_logs_reversed(&self) -> impl Iterator<Item = &LogEntry> {
+        self.logs.iter().rev()
+    }
 }
 
 impl Default for LogManager {
