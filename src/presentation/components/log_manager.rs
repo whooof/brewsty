@@ -61,18 +61,20 @@ impl LogManager {
     }
 
     pub fn push(&mut self, message: String) {
-        if let Some(level_str) = message.split(']').next().and_then(|s| s.strip_prefix('[')) {
-            if let Some(level) = LogLevel::from_str(level_str) {
-                if self.logs.len() >= MAX_LOG_SIZE {
-                    self.logs.pop_front();
-                }
-                self.logs.push_back(LogEntry {
-                    message,
-                    timestamp: std::time::SystemTime::now(),
-                    level,
-                });
-            }
+        let level = message
+            .split(']')
+            .next()
+            .and_then(|s| s.strip_prefix('['))
+            .and_then(|level_str| LogLevel::from_str(level_str))
+            .unwrap_or(LogLevel::Info);
+        if self.logs.len() >= MAX_LOG_SIZE {
+            self.logs.pop_front();
         }
+        self.logs.push_back(LogEntry {
+            message,
+            timestamp: std::time::SystemTime::now(),
+            level,
+        });
     }
 
     pub fn extend(&mut self, messages: Vec<String>) {

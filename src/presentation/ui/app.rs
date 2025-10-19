@@ -175,7 +175,7 @@ impl BrewstyApp {
                 *output_log.lock().map_err(|e| anyhow::anyhow!("Failed to lock logs: {}", e))? = logs;
                 tracing::debug!("Successfully updated mutexes");
 
-                anyhow::Ok(())
+                Ok(())
             })() {
                 tracing::error!("Error in load_installed_packages thread: {}", e);
                 if let Ok(mut logs) = output_log.lock() {
