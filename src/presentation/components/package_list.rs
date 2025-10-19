@@ -1,5 +1,5 @@
 use crate::domain::entities::{Package, PackageType};
-use egui::{Button, Color32, RichText, ScrollArea};
+use egui::{Color32, RichText, ScrollArea};
 
 pub struct PackageList {
     packages: Vec<Package>,
@@ -22,22 +22,6 @@ impl PackageList {
         if let Some(existing) = self.packages.iter_mut().find(|p| p.name == package.name) {
             *existing = package;
         }
-    }
-
-    pub fn get_selected_package(&self) -> Option<&Package> {
-        self.selected_package
-            .as_ref()
-            .and_then(|name| self.packages.iter().find(|p| &p.name == name))
-    }
-
-    pub fn show(
-        &mut self,
-        ui: &mut egui::Ui,
-        on_install: &mut Option<Package>,
-        on_uninstall: &mut Option<Package>,
-        on_update: &mut Option<Package>,
-    ) {
-        self.show_filtered(ui, on_install, on_uninstall, on_update, true, true);
     }
 
     pub fn show_filtered(

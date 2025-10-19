@@ -76,12 +76,6 @@ impl Package {
 }
 
 #[derive(Debug, Clone)]
-pub struct CacheInfo {
-    pub total_size: u64,
-    pub package_count: usize,
-}
-
-#[derive(Debug, Clone)]
 pub struct CleanupItem {
     pub path: String,
     pub size: u64,

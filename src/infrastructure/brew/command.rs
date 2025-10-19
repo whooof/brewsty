@@ -1,35 +1,9 @@
 use anyhow::{anyhow, Result};
-use serde::Deserialize;
 use std::process::Command;
-
-#[derive(Debug, Deserialize)]
-struct BrewPackageInfo {
-    name: String,
-    #[serde(default)]
-    version: Option<String>,
-    #[serde(default)]
-    desc: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct BrewCaskInfo {
-    token: String,
-    version: Option<String>,
-    #[serde(default)]
-    desc: Option<String>,
-}
 
 pub struct BrewCommand;
 
 impl BrewCommand {
-    pub fn check_brew_installed() -> Result<bool> {
-        let output = Command::new("which")
-            .arg("brew")
-            .output()?;
-        
-        Ok(output.status.success())
-    }
-
     pub fn list_formulae() -> Result<String> {
         let output = Command::new("brew")
             .args(["info", "--json=v2", "--installed", "--formula"])
@@ -253,18 +227,6 @@ impl BrewCommand {
 
         if !output.status.success() {
             return Err(anyhow!("Failed to search casks: {}", String::from_utf8_lossy(&output.stderr)));
-        }
-
-        Ok(String::from_utf8(output.stdout)?)
-    }
-
-    pub fn get_cache_info() -> Result<String> {
-        let output = Command::new("brew")
-            .args(["--cache"])
-            .output()?;
-
-        if !output.status.success() {
-            return Err(anyhow!("Failed to get cache info: {}", String::from_utf8_lossy(&output.stderr)));
         }
 
         Ok(String::from_utf8(output.stdout)?)

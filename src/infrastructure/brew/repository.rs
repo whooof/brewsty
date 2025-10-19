@@ -1,5 +1,5 @@
 use crate::domain::{
-    entities::{CacheInfo, CleanupItem, CleanupPreview, Package, PackageType},
+    entities::{CleanupItem, CleanupPreview, Package, PackageType},
     repositories::PackageRepository,
 };
 use crate::infrastructure::brew::command::BrewCommand;
@@ -88,24 +88,6 @@ impl BrewPackageRepository {
         Ok(packages)
     }
 
-    async fn calculate_cache_size(&self, cache_path: &str) -> Result<u64> {
-        let path = Path::new(cache_path.trim());
-        if !path.exists() {
-            return Ok(0);
-        }
-
-        let mut total_size = 0u64;
-        if let Ok(entries) = std::fs::read_dir(path) {
-            for entry in entries.flatten() {
-                if let Ok(metadata) = entry.metadata() {
-                    total_size += metadata.len();
-                }
-            }
-        }
-
-        Ok(total_size)
-    }
-
     fn parse_cleanup_output(&self, output: &str) -> Result<CleanupPreview> {
         let mut items = Vec::new();
         let mut total_size = 0u64;
@@ -175,10 +157,6 @@ impl PackageRepository for BrewPackageRepository {
         self.parse_installed_packages(&output, package_type)
     }
 
-    async fn get_available_packages(&self, _package_type: PackageType) -> Result<Vec<Package>> {
-        Ok(vec![])
-    }
-
     async fn get_outdated_packages(&self, package_type: PackageType) -> Result<Vec<Package>> {
         let package_type_clone = package_type.clone();
         let output = tokio::task::spawn_blocking(move || match package_type_clone {
@@ -220,17 +198,6 @@ impl PackageRepository for BrewPackageRepository {
 
     async fn update_all(&self) -> Result<()> {
         tokio::task::spawn_blocking(|| BrewCommand::upgrade_all()).await?
-    }
-
-    async fn get_cache_info(&self) -> Result<CacheInfo> {
-        let cache_path = tokio::task::spawn_blocking(|| BrewCommand::get_cache_info()).await??;
-
-        let size = self.calculate_cache_size(&cache_path).await?;
-
-        Ok(CacheInfo {
-            total_size: size,
-            package_count: 0,
-        })
     }
 
     async fn get_cleanup_preview(&self) -> Result<CleanupPreview> {
