@@ -283,7 +283,7 @@ impl AsyncTaskManager {
                                 true
                             }
                         }
-                        Err(_) => true;
+                        Err(_) => true,
                     };
                     
                     if should_put_back {
@@ -305,7 +305,7 @@ impl AsyncTaskManager {
                                 true
                             }
                         }
-                        Err(_) => true;
+                        Err(_) => true,
                     };
                     
                     if should_put_back {
@@ -327,7 +327,7 @@ impl AsyncTaskManager {
                                 true
                             }
                         }
-                        Err(_) => true;
+                        Err(_) => true,
                     };
                     
                     if should_put_back {
@@ -349,7 +349,7 @@ impl AsyncTaskManager {
                                 true
                             }
                         }
-                        Err(_) => true;
+                        Err(_) => true,
                     };
                     
                     if should_put_back {
@@ -371,7 +371,7 @@ impl AsyncTaskManager {
                                 true
                             }
                         }
-                        Err(_) => true;
+                        Err(_) => true,
                     };
                     
                     if should_put_back {
@@ -393,7 +393,7 @@ impl AsyncTaskManager {
                                 true
                             }
                         }
-                        Err(_) => true;
+                        Err(_) => true,
                     };
                     
                     if should_put_back {
@@ -415,7 +415,7 @@ impl AsyncTaskManager {
                                 true
                             }
                         }
-                        Err(_) => true;
+                        Err(_) => true,
                     };
                     
                     if should_put_back {
@@ -437,7 +437,7 @@ impl AsyncTaskManager {
                                 true
                             }
                         }
-                        Err(_) => true;
+                        Err(_) => true,
                     };
                     
                     if should_put_back {
