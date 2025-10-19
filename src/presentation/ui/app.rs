@@ -675,7 +675,7 @@ impl eframe::App for BrewstyApp {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("🍺 Brewsty");
-                ui.label("v0.1.0");
+                ui.label(format!("v{}", env!("CARGO_PKG_VERSION")));
                 ui.separator();
                 
                 if ui.selectable_label(self.tab_manager.is_current(Tab::Installed), "Installed").clicked() {
