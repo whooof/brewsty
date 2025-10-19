@@ -164,8 +164,7 @@ impl PackageList {
                                 if ui.button("Uninstall").clicked() {
                                     *on_uninstall = Some(package.clone());
                                 }
-                                let can_update = package.outdated && !package.pinned;
-                                if can_update && ui.button("Update").clicked() {
+                                if package.outdated && !package.pinned && ui.button("Update").clicked() {
                                     *on_update = Some(package.clone());
                                 }
                                 // Only show pin/unpin for formulae (casks don't support pinning in Homebrew)
