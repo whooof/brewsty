@@ -1,8 +1,8 @@
 use crate::application::UseCaseContainer;
 use crate::domain::entities::{Package, PackageType};
 use crate::presentation::components::{
-    CleanupAction, CleanupModal, CleanupType, FilterState, InfoModal, LogLevel, LogManager, PackageList, Tab,
-    TabManager,
+    CleanupAction, CleanupModal, CleanupType, FilterState, InfoModal, LogLevel, LogManager,
+    PackageList, Tab, TabManager,
 };
 use crate::presentation::services::{AsyncExecutor, AsyncTask, AsyncTaskManager};
 use std::sync::mpsc::Receiver;
@@ -113,7 +113,7 @@ impl BrewstyApp {
 
         thread::spawn(move || {
             tracing::trace!("THREAD STARTED: load_installed_packages");
-            if let Err(e) = (|| {
+            if let Err(e) = (|| -> anyhow::Result<()> {
                 tracing::trace!("THREAD: about to create runtime");
                 let rt = tokio::runtime::Runtime::new()?;
                 tracing::trace!("THREAD: runtime created");
@@ -124,13 +124,25 @@ impl BrewstyApp {
                 let formulae_result =
                     rt.block_on(async { use_case_formulae.execute(PackageType::Formula).await });
 
-                tracing::debug!("Formulae result: {:?}", formulae_result.as_ref().map(|p| p.len()).map_err(|e| e.to_string()));
+                tracing::debug!(
+                    "Formulae result: {:?}",
+                    formulae_result
+                        .as_ref()
+                        .map(|p| p.len())
+                        .map_err(|e| e.to_string())
+                );
 
                 tracing::trace!("THREAD: about to execute casks");
                 let casks_result =
                     rt.block_on(async { use_case_casks.execute(PackageType::Cask).await });
 
-                tracing::debug!("Casks result: {:?}", casks_result.as_ref().map(|p| p.len()).map_err(|e| e.to_string()));
+                tracing::debug!(
+                    "Casks result: {:?}",
+                    casks_result
+                        .as_ref()
+                        .map(|p| p.len())
+                        .map_err(|e| e.to_string())
+                );
 
                 let mut packages = Vec::new();
                 let mut logs = Vec::new();
@@ -165,14 +177,18 @@ impl BrewstyApp {
 
                 tracing::debug!("About to write {} packages to mutex", packages.len());
                 tracing::debug!("About to lock packages mutex");
-                *installed_packages.lock().map_err(|e| anyhow::anyhow!("Failed to lock packages: {}", e))? = packages;
+                *installed_packages
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("Failed to lock packages: {}", e))? = packages;
                 tracing::debug!("Successfully locked packages, now adding finish log");
-                
+
                 logs.push("Finished loading installed packages".to_string());
                 tracing::info!("Finished loading installed packages");
-                
+
                 tracing::debug!("About to lock logs mutex with {} log entries", logs.len());
-                *output_log.lock().map_err(|e| anyhow::anyhow!("Failed to lock logs: {}", e))? = logs;
+                *output_log
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("Failed to lock logs: {}", e))? = logs;
                 tracing::debug!("Successfully updated mutexes");
 
                 Ok(())
@@ -217,12 +233,24 @@ impl BrewstyApp {
                 let formulae_result =
                     rt.block_on(async { use_case_formulae.execute(PackageType::Formula).await });
 
-                tracing::debug!("Outdated formulae result: {:?}", formulae_result.as_ref().map(|p| p.len()).map_err(|e| e.to_string()));
+                tracing::debug!(
+                    "Outdated formulae result: {:?}",
+                    formulae_result
+                        .as_ref()
+                        .map(|p| p.len())
+                        .map_err(|e| e.to_string())
+                );
 
                 let casks_result =
                     rt.block_on(async { use_case_casks.execute(PackageType::Cask).await });
 
-                tracing::debug!("Outdated casks result: {:?}", casks_result.as_ref().map(|p| p.len()).map_err(|e| e.to_string()));
+                tracing::debug!(
+                    "Outdated casks result: {:?}",
+                    casks_result
+                        .as_ref()
+                        .map(|p| p.len())
+                        .map_err(|e| e.to_string())
+                );
 
                 let mut packages = Vec::new();
                 let mut logs = Vec::new();
@@ -255,16 +283,26 @@ impl BrewstyApp {
                     }
                 }
 
-                tracing::debug!("About to write {} outdated packages to mutex", packages.len());
+                tracing::debug!(
+                    "About to write {} outdated packages to mutex",
+                    packages.len()
+                );
                 tracing::debug!("About to lock outdated packages mutex");
-                *outdated_packages.lock().map_err(|e| anyhow::anyhow!("Failed to lock packages: {}", e))? = packages;
+                *outdated_packages
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("Failed to lock packages: {}", e))? = packages;
                 tracing::debug!("Successfully locked packages, now adding finish log");
-                
+
                 logs.push("Finished loading outdated packages".to_string());
                 tracing::info!("Finished loading outdated packages");
 
-                tracing::debug!("About to lock outdated logs mutex with {} log entries", logs.len());
-                *output_log.lock().map_err(|e| anyhow::anyhow!("Failed to lock logs: {}", e))? = logs;
+                tracing::debug!(
+                    "About to lock outdated logs mutex with {} log entries",
+                    logs.len()
+                );
+                *output_log
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("Failed to lock logs: {}", e))? = logs;
                 tracing::debug!("Successfully updated outdated mutexes");
 
                 anyhow::Ok(())
@@ -1113,8 +1151,12 @@ impl eframe::App for BrewstyApp {
                     }
                     ui.separator();
                     if ui.button("📋 Copy Output").clicked() {
-                        let output = self.log_manager.all_logs()
-                            .map(|entry| format!("[{}] {}", entry.format_timestamp(), entry.message))
+                        let output = self
+                            .log_manager
+                            .all_logs()
+                            .map(|entry| {
+                                format!("[{}] {}", entry.format_timestamp(), entry.message)
+                            })
                             .collect::<Vec<_>>()
                             .join("\n");
                         ctx.copy_text(output);
@@ -1406,8 +1448,12 @@ impl eframe::App for BrewstyApp {
 
                     ui.horizontal(|ui| {
                         if ui.button("📋 Copy All").clicked() {
-                            let output = self.log_manager.all_logs()
-                                .map(|entry| format!("[{}] {}", entry.format_timestamp(), entry.message))
+                            let output = self
+                                .log_manager
+                                .all_logs()
+                                .map(|entry| {
+                                    format!("[{}] {}", entry.format_timestamp(), entry.message)
+                                })
                                 .collect::<Vec<_>>()
                                 .join("\n");
                             ctx.copy_text(output);
@@ -1423,7 +1469,8 @@ impl eframe::App for BrewstyApp {
                         .auto_shrink([false; 2])
                         .stick_to_bottom(true)
                         .show(ui, |ui| {
-                            ui.visuals_mut().override_text_color = Some(egui::Color32::from_rgb(0, 255, 0));
+                            ui.visuals_mut().override_text_color =
+                                Some(egui::Color32::from_rgb(0, 255, 0));
                             let bg_frame = egui::Frame::default()
                                 .fill(egui::Color32::BLACK)
                                 .inner_margin(8.0);

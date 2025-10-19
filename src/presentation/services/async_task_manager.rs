@@ -1,6 +1,6 @@
 use crate::domain::entities::{Package, PackageType};
-use std::sync::{Arc, Mutex};
 use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 
 pub enum AsyncTask {
     LoadInstalled {
@@ -106,25 +106,25 @@ impl AsyncTaskManager {
             AsyncTask::Search { .. } => "Search",
             _ => "",
         };
-        
+
         if !task_type.is_empty() && self.has_task_type(task_type) {
             tracing::warn!("{} task is already running, ignoring duplicate", task_type);
             return;
         }
-        
+
         self.active_tasks.push(task);
     }
 
     pub fn has_task_type(&self, task_type: &str) -> bool {
-         self.active_tasks.iter().any(|task| {
-             match (task, task_type) {
-                 (AsyncTask::LoadInstalled { .. }, "LoadInstalled") => true,
-                 (AsyncTask::LoadOutdated { .. }, "LoadOutdated") => true,
-                 (AsyncTask::Search { .. }, "Search") => true,
-                 _ => false,
-             }
-         })
-     }
+        self.active_tasks
+            .iter()
+            .any(|task| match (task, task_type) {
+                (AsyncTask::LoadInstalled { .. }, "LoadInstalled") => true,
+                (AsyncTask::LoadOutdated { .. }, "LoadOutdated") => true,
+                (AsyncTask::Search { .. }, "Search") => true,
+                _ => false,
+            })
+    }
 
     pub fn add_package_info_task(&mut self, package_name: String, task: AsyncTask) {
         self.packages_loading_info.insert(package_name.clone());
@@ -140,13 +140,18 @@ impl AsyncTaskManager {
             tracing::debug!("Already loading info for {}, skipping", package_name);
             return;
         }
-        
-        if self.pending_package_info_loads.iter().any(|(name, _)| name == &package_name) {
+
+        if self
+            .pending_package_info_loads
+            .iter()
+            .any(|(name, _)| name == &package_name)
+        {
             tracing::debug!("Already queued for loading: {}", package_name);
             return;
         }
-        
-        self.pending_package_info_loads.push((package_name, package_type));
+
+        self.pending_package_info_loads
+            .push((package_name, package_type));
     }
 
     pub fn can_load_more_package_info(&self) -> bool {
@@ -154,7 +159,9 @@ impl AsyncTaskManager {
     }
 
     pub fn drain_pending_loads(&mut self, count: usize) -> Vec<(String, PackageType)> {
-        self.pending_package_info_loads.drain(..count.min(self.pending_package_info_loads.len())).collect()
+        self.pending_package_info_loads
+            .drain(..count.min(self.pending_package_info_loads.len()))
+            .collect()
     }
 
     pub fn pending_loads_count(&self) -> usize {
@@ -180,14 +187,23 @@ impl AsyncTaskManager {
         };
 
         let mut tasks_to_keep = Vec::new();
-        
+
         for (pkg_name, task) in self.package_info_tasks.drain(..) {
             match task {
-                AsyncTask::LoadPackageInfo { package_name, package_type, result: pkg_result, started_at } => {
+                AsyncTask::LoadPackageInfo {
+                    package_name,
+                    package_type,
+                    result: pkg_result,
+                    started_at,
+                } => {
                     let elapsed = started_at.elapsed();
-                    
+
                     if elapsed > std::time::Duration::from_secs(10) {
-                        tracing::warn!("Package info loading timed out for {} after {:?}", package_name, elapsed);
+                        tracing::warn!(
+                            "Package info loading timed out for {} after {:?}",
+                            package_name,
+                            elapsed
+                        );
                         let failed_package = Package::new(package_name.clone(), package_type)
                             .set_version_load_failed(true);
                         result.package_info = Some((package_name.clone(), failed_package));
@@ -195,12 +211,15 @@ impl AsyncTaskManager {
                         result.completed_package_info_loads.push(package_name);
                         continue;
                     }
-                    
+
                     let package_name_clone = package_name.clone();
                     let should_keep = match pkg_result.try_lock() {
                         Ok(pkg_opt) => {
                             if let Some(package) = pkg_opt.clone() {
-                                tracing::info!("Updating search results with package info for {}", package_name_clone);
+                                tracing::info!(
+                                    "Updating search results with package info for {}",
+                                    package_name_clone
+                                );
                                 result.package_info = Some((package_name_clone.clone(), package));
                                 self.packages_loading_info.remove(&package_name_clone);
                                 result.completed_package_info_loads.push(package_name_clone);
@@ -209,21 +228,29 @@ impl AsyncTaskManager {
                                 true
                             }
                         }
-                        Err(_) => true
+                        Err(_) => true,
                     };
-                    
+
                     if should_keep {
-                        tasks_to_keep.push((pkg_name, AsyncTask::LoadPackageInfo { package_name, package_type, result: pkg_result, started_at }));
+                        tasks_to_keep.push((
+                            pkg_name,
+                            AsyncTask::LoadPackageInfo {
+                                package_name,
+                                package_type,
+                                result: pkg_result,
+                                started_at,
+                            },
+                        ));
                     }
                 }
                 _ => {}
             }
         }
-        
+
         self.package_info_tasks = tasks_to_keep;
 
         let mut active_tasks_to_keep = Vec::new();
-        
+
         for task in self.active_tasks.drain(..) {
             match task {
                 AsyncTask::LoadInstalled { packages, logs } => {
@@ -241,9 +268,9 @@ impl AsyncTaskManager {
                                 true
                             }
                         }
-                        Err(_) => true
+                        Err(_) => true,
                     };
-                    
+
                     if should_put_back {
                         active_tasks_to_keep.push(AsyncTask::LoadInstalled { packages, logs });
                     }
@@ -263,9 +290,9 @@ impl AsyncTaskManager {
                                 true
                             }
                         }
-                        Err(_) => true
+                        Err(_) => true,
                     };
-                    
+
                     if should_put_back {
                         active_tasks_to_keep.push(AsyncTask::LoadOutdated { packages, logs });
                     }
@@ -275,7 +302,10 @@ impl AsyncTaskManager {
                         Ok(res) => {
                             if let Ok(log) = logs.try_lock() {
                                 if !log.is_empty() {
-                                    tracing::info!("Search completed, found {} packages", res.len());
+                                    tracing::info!(
+                                        "Search completed, found {} packages",
+                                        res.len()
+                                    );
                                     result.search_results = Some(res.clone());
                                     result.logs.extend(log.clone());
                                     false
@@ -286,14 +316,18 @@ impl AsyncTaskManager {
                                 true
                             }
                         }
-                        Err(_) => true
+                        Err(_) => true,
                     };
-                    
+
                     if should_put_back {
                         active_tasks_to_keep.push(AsyncTask::Search { results, logs });
                     }
                 }
-                AsyncTask::Install { success, logs, message } => {
+                AsyncTask::Install {
+                    success,
+                    logs,
+                    message,
+                } => {
                     let should_put_back = match success.try_lock() {
                         Ok(success_opt) => {
                             if let Some(succeeded) = *success_opt {
@@ -310,12 +344,20 @@ impl AsyncTaskManager {
                         }
                         Err(_) => true,
                     };
-                    
+
                     if should_put_back {
-                        active_tasks_to_keep.push(AsyncTask::Install { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::Install {
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::Uninstall { success, logs, message } => {
+                AsyncTask::Uninstall {
+                    success,
+                    logs,
+                    message,
+                } => {
                     let should_put_back = match success.try_lock() {
                         Ok(success_opt) => {
                             if let Some(succeeded) = *success_opt {
@@ -332,12 +374,20 @@ impl AsyncTaskManager {
                         }
                         Err(_) => true,
                     };
-                    
+
                     if should_put_back {
-                        active_tasks_to_keep.push(AsyncTask::Uninstall { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::Uninstall {
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::Update { success, logs, message } => {
+                AsyncTask::Update {
+                    success,
+                    logs,
+                    message,
+                } => {
                     let should_put_back = match success.try_lock() {
                         Ok(success_opt) => {
                             if let Some(succeeded) = *success_opt {
@@ -354,12 +404,20 @@ impl AsyncTaskManager {
                         }
                         Err(_) => true,
                     };
-                    
+
                     if should_put_back {
-                        active_tasks_to_keep.push(AsyncTask::Update { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::Update {
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::UpdateAll { success, logs, message } => {
+                AsyncTask::UpdateAll {
+                    success,
+                    logs,
+                    message,
+                } => {
                     let should_put_back = match success.try_lock() {
                         Ok(success_opt) => {
                             if let Some(succeeded) = *success_opt {
@@ -376,12 +434,20 @@ impl AsyncTaskManager {
                         }
                         Err(_) => true,
                     };
-                    
+
                     if should_put_back {
-                        active_tasks_to_keep.push(AsyncTask::UpdateAll { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::UpdateAll {
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::CleanCache { success, logs, message } => {
+                AsyncTask::CleanCache {
+                    success,
+                    logs,
+                    message,
+                } => {
                     let should_put_back = match success.try_lock() {
                         Ok(success_opt) => {
                             if let Some(succeeded) = *success_opt {
@@ -398,17 +464,26 @@ impl AsyncTaskManager {
                         }
                         Err(_) => true,
                     };
-                    
+
                     if should_put_back {
-                        active_tasks_to_keep.push(AsyncTask::CleanCache { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::CleanCache {
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::CleanupOldVersions { success, logs, message } => {
+                AsyncTask::CleanupOldVersions {
+                    success,
+                    logs,
+                    message,
+                } => {
                     let should_put_back = match success.try_lock() {
                         Ok(success_opt) => {
                             if let Some(succeeded) = *success_opt {
                                 if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
-                                    result.cleanup_old_versions_completed = Some((succeeded, msg.clone()));
+                                    result.cleanup_old_versions_completed =
+                                        Some((succeeded, msg.clone()));
                                     result.logs.extend(log.clone());
                                     false
                                 } else {
@@ -420,17 +495,27 @@ impl AsyncTaskManager {
                         }
                         Err(_) => true,
                     };
-                    
+
                     if should_put_back {
-                        active_tasks_to_keep.push(AsyncTask::CleanupOldVersions { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::CleanupOldVersions {
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::Pin { package_name, success, logs, message } => {
+                AsyncTask::Pin {
+                    package_name,
+                    success,
+                    logs,
+                    message,
+                } => {
                     let should_put_back = match success.try_lock() {
                         Ok(success_opt) => {
                             if let Some(succeeded) = *success_opt {
                                 if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
-                                    result.pin_completed = Some((package_name.clone(), succeeded, msg.clone()));
+                                    result.pin_completed =
+                                        Some((package_name.clone(), succeeded, msg.clone()));
                                     result.logs.extend(log.clone());
                                     false
                                 } else {
@@ -442,17 +527,28 @@ impl AsyncTaskManager {
                         }
                         Err(_) => true,
                     };
-                    
+
                     if should_put_back {
-                        active_tasks_to_keep.push(AsyncTask::Pin { package_name, success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::Pin {
+                            package_name,
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::Unpin { package_name, success, logs, message } => {
+                AsyncTask::Unpin {
+                    package_name,
+                    success,
+                    logs,
+                    message,
+                } => {
                     let should_put_back = match success.try_lock() {
                         Ok(success_opt) => {
                             if let Some(succeeded) = *success_opt {
                                 if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
-                                    result.unpin_completed = Some((package_name.clone(), succeeded, msg.clone()));
+                                    result.unpin_completed =
+                                        Some((package_name.clone(), succeeded, msg.clone()));
                                     result.logs.extend(log.clone());
                                     false
                                 } else {
@@ -464,16 +560,20 @@ impl AsyncTaskManager {
                         }
                         Err(_) => true,
                     };
-                    
+
                     if should_put_back {
-                        active_tasks_to_keep.push(AsyncTask::Unpin { package_name, success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::Unpin {
+                            package_name,
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::LoadPackageInfo { .. } => {
-                }
+                AsyncTask::LoadPackageInfo { .. } => {}
             }
         }
-        
+
         self.active_tasks = active_tasks_to_keep;
 
         result

@@ -88,11 +88,16 @@ impl LogManager {
     }
 
     pub fn filtered_logs(&self) -> impl Iterator<Item = &LogEntry> {
-        self.logs.iter().filter(move |entry| self.visible_levels.contains(&entry.level))
+        self.logs
+            .iter()
+            .filter(move |entry| self.visible_levels.contains(&entry.level))
     }
 
     pub fn filtered_logs_reversed(&self) -> impl Iterator<Item = &LogEntry> {
-        self.logs.iter().rev().filter(move |entry| self.visible_levels.contains(&entry.level))
+        self.logs
+            .iter()
+            .rev()
+            .filter(move |entry| self.visible_levels.contains(&entry.level))
     }
 
     pub fn set_level_visible(&mut self, level: LogLevel, visible: bool) {

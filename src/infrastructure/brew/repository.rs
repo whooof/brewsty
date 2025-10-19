@@ -103,13 +103,16 @@ impl BrewPackageRepository {
         package_type: PackageType,
         pinned_packages: &[String],
     ) -> Result<Vec<Package>> {
-        tracing::debug!("parse_installed_packages_plain_text called for {:?}", package_type);
+        tracing::debug!(
+            "parse_installed_packages_plain_text called for {:?}",
+            package_type
+        );
         tracing::debug!("Output length: {} bytes", output.len());
-        
+
         let mut packages = Vec::new();
         let line_count = output.lines().count();
         tracing::debug!("Processing {} lines", line_count);
-        
+
         for line in output.lines() {
             let trimmed = line.trim();
             if trimmed.is_empty() {
@@ -226,7 +229,10 @@ impl PackageRepository for BrewPackageRepository {
                 .await??;
         tracing::info!("Got output for {:?}: {} bytes", package_type, output.len());
         let result = self.parse_installed_packages(&output, package_type);
-        tracing::info!("parse_installed_packages returned: {:?}", result.as_ref().map(|p| p.len()).map_err(|e| e.to_string()));
+        tracing::info!(
+            "parse_installed_packages returned: {:?}",
+            result.as_ref().map(|p| p.len()).map_err(|e| e.to_string())
+        );
         result
     }
 
@@ -318,9 +324,10 @@ impl PackageRepository for BrewPackageRepository {
     ) -> Result<Vec<Package>> {
         let query = query.to_string();
         let package_type_clone = package_type.clone();
-        let output =
-            tokio::task::spawn_blocking(move || BrewCommand::search_packages(&query, package_type_clone))
-                .await??;
+        let output = tokio::task::spawn_blocking(move || {
+            BrewCommand::search_packages(&query, package_type_clone)
+        })
+        .await??;
 
         let packages: Vec<Package> = output
             .lines()

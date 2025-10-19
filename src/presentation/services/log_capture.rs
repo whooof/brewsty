@@ -1,8 +1,8 @@
 use std::sync::mpsc::{Receiver, Sender, channel};
 use tracing_subscriber::Layer;
+use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::filter::LevelFilter;
 
 static LOG_SENDER: std::sync::OnceLock<Sender<String>> = std::sync::OnceLock::new();
 
@@ -18,7 +18,7 @@ pub fn init_log_capture() -> Receiver<String> {
 
     #[cfg(debug_assertions)]
     let filter = LevelFilter::TRACE;
-    
+
     #[cfg(not(debug_assertions))]
     let filter = LevelFilter::DEBUG;
 
@@ -46,7 +46,10 @@ where
         let metadata = event.metadata();
         let target = metadata.target();
 
-        if !target.starts_with("brewsty::infrastructure::brew") && !target.starts_with("brewsty::application") && !target.starts_with("brewsty::presentation") {
+        if !target.starts_with("brewsty::infrastructure::brew")
+            && !target.starts_with("brewsty::application")
+            && !target.starts_with("brewsty::presentation")
+        {
             return;
         }
 

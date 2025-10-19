@@ -8,6 +8,6 @@ pub mod tab_manager;
 pub use cleanup_modal::{CleanupAction, CleanupModal, CleanupType};
 pub use filter_state::FilterState;
 pub use info_modal::InfoModal;
-pub use log_manager::{LogManager, LogLevel};
+pub use log_manager::{LogLevel, LogManager};
 pub use package_list::PackageList;
 pub use tab_manager::{Tab, TabManager};
