@@ -71,6 +71,9 @@ impl BrewPackageRepository {
             PackageType::Cask => "casks",
         };
 
+        // Get the list of pinned packages
+        let pinned_packages = self.get_pinned_packages().unwrap_or_default();
+
         if let Some(items) = data.get(items_key).and_then(|v| v.as_array()) {
             for item in items {
                 if let Some(name) = item.get("name").and_then(|v| v.as_str()) {
@@ -86,10 +89,13 @@ impl BrewPackageRepository {
                         .and_then(|v| v.as_str())
                         .map(String::from);
 
+                    let is_pinned = pinned_packages.contains(&name.to_string());
+
                     let mut package = Package::new(name.to_string(), package_type.clone())
                         .set_installed(true)
                         .set_outdated(true)
-                        .with_version(version.unwrap_or_default());
+                        .with_version(version.unwrap_or_default())
+                        .set_pinned(is_pinned);
 
                     if let Some(av) = available_version {
                         package = package.with_available_version(av);

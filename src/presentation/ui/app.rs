@@ -275,10 +275,16 @@ impl BrewstyApp {
         self.loading = false;
         
         if result.success {
+            // Mark tabs as unloaded so they reload when accessed
             self.tab_manager.mark_unloaded(Tab::Installed);
             self.tab_manager.mark_unloaded(Tab::Outdated);
-            self.load_installed_packages();
-            self.load_outdated_packages();
+            
+            // Reload the current tab immediately
+            match self.tab_manager.current() {
+                Tab::Installed => self.load_installed_packages(),
+                Tab::Outdated => self.load_outdated_packages(),
+                _ => {}
+            }
         }
     }
 
@@ -293,10 +299,16 @@ impl BrewstyApp {
         self.loading = false;
         
         if result.success {
+            // Mark tabs as unloaded so they reload when accessed
             self.tab_manager.mark_unloaded(Tab::Installed);
             self.tab_manager.mark_unloaded(Tab::Outdated);
-            self.load_installed_packages();
-            self.load_outdated_packages();
+            
+            // Reload the current tab immediately
+            match self.tab_manager.current() {
+                Tab::Installed => self.load_installed_packages(),
+                Tab::Outdated => self.load_outdated_packages(),
+                _ => {}
+            }
         }
     }
 
