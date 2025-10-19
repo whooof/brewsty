@@ -1,7 +1,7 @@
 use crate::application::UseCaseContainer;
 use crate::domain::entities::{Package, PackageType};
 use crate::presentation::components::{
-    CleanupAction, CleanupModal, CleanupType, FilterState, LogManager, PackageList, Tab, TabManager
+    CleanupAction, CleanupModal, CleanupType, FilterState, InfoModal, LogManager, PackageList, Tab, TabManager
 };
 use crate::presentation::services::{
     AsyncExecutor, AsyncTask, AsyncTaskManager, PackageOperationHandler
@@ -13,6 +13,7 @@ pub struct BrewstyApp {
     tab_manager: TabManager,
     filter_state: FilterState,
     cleanup_modal: CleanupModal,
+    info_modal: InfoModal,
     log_manager: LogManager,
     
     installed_packages: PackageList,
@@ -35,6 +36,7 @@ pub struct BrewstyApp {
     
     loading: bool,
     status_message: String,
+    output_panel_height: f32,
 }
 
 impl BrewstyApp {
@@ -54,6 +56,7 @@ impl BrewstyApp {
             tab_manager: TabManager::new(),
             filter_state: FilterState::new(),
             cleanup_modal: CleanupModal::new(),
+            info_modal: InfoModal::new(),
             log_manager: LogManager::new(),
             installed_packages: PackageList::new(),
             outdated_packages: PackageList::new(),
@@ -69,6 +72,7 @@ impl BrewstyApp {
             package_ops,
             loading: false,
             status_message: String::new(),
+            output_panel_height: 150.0,
         }
     }
 
@@ -688,15 +692,44 @@ impl eframe::App for BrewstyApp {
             });
         });
 
-        egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Status:");
-                if self.loading {
-                    ui.spinner();
-                }
-                ui.label(&self.status_message);
+        egui::TopBottomPanel::bottom("bottom_panel")
+            .resizable(true)
+            .default_height(self.output_panel_height)
+            .show(ctx, |ui| {
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.add_space(ui.available_width() / 2.0 - 45.0);
+                    if ui.button("Clear Output").clicked() {
+                        self.log_manager = LogManager::new();
+                    }
+                });
+                
+                ui.separator();
+                
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false; 2])
+                    .stick_to_bottom(true)
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        
+                        for entry in self.log_manager.all_logs() {
+                            let timestamp = entry.timestamp
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default();
+                            let hours = (timestamp.as_secs() / 3600) % 24;
+                            let minutes = (timestamp.as_secs() / 60) % 60;
+                            let seconds = timestamp.as_secs() % 60;
+                            
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new(format!("[{:02}:{:02}:{:02}]", hours, minutes, seconds))
+                                    .color(egui::Color32::GRAY).monospace());
+                                ui.monospace(&entry.message);
+                            });
+                        }
+                    });
+                
+                self.output_panel_height = ui.available_height();
             });
-        });
 
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.tab_manager.current() {
@@ -759,6 +792,9 @@ impl eframe::App for BrewstyApp {
                         if let Some(package) = unpin_action {
                             self.handle_unpin(package);
                         }
+                        if let Some(package) = self.installed_packages.get_show_info_action() {
+                            self.info_modal.show(package);
+                        }
                     }
                 }
 
@@ -820,6 +856,9 @@ impl eframe::App for BrewstyApp {
                         }
                         if let Some(package) = unpin_action {
                             self.handle_unpin(package);
+                        }
+                        if let Some(package) = self.outdated_packages.get_show_info_action() {
+                            self.info_modal.show(package);
                         }
                     }
                 }
@@ -891,6 +930,9 @@ impl eframe::App for BrewstyApp {
                         if let Some(package) = unpin_action {
                             self.handle_unpin(package);
                         }
+                        if let Some(package) = self.search_results.get_show_info_action() {
+                            self.info_modal.show(package);
+                        }
                     }
                 }
 
@@ -930,10 +972,15 @@ impl eframe::App for BrewstyApp {
                         .show(ui, |ui| {
                             ui.set_width(ui.available_width());
                             
-                            for (index, line) in self.log_manager.all_logs().iter().enumerate() {
+                            for line in self.log_manager.all_logs() {
+                                let timestamp = line.timestamp
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .map(|d| format!("{:.3}s", d.as_secs_f64()))
+                                    .unwrap_or_else(|_| "??:??".to_string());
+                                
                                 ui.horizontal(|ui| {
-                                    ui.label(egui::RichText::new(format!("[{}]", index + 1)).color(egui::Color32::GRAY).monospace());
-                                    ui.monospace(line.as_str());
+                                    ui.label(egui::RichText::new(format!("[{}]", timestamp)).color(egui::Color32::GRAY).monospace());
+                                    ui.monospace(&line.message);
                                 });
                             }
                         });
@@ -953,6 +1000,8 @@ impl eframe::App for BrewstyApp {
                     }
                 }
             }
+
+            self.info_modal.render(ctx);
         });
     }
 }

@@ -4,6 +4,7 @@ use egui::{Color32, RichText, ScrollArea};
 pub struct PackageList {
     packages: Vec<Package>,
     selected_package: Option<String>,
+    show_info_action: Option<Package>,
 }
 
 impl PackageList {
@@ -11,6 +12,7 @@ impl PackageList {
         Self {
             packages: Vec::new(),
             selected_package: None,
+            show_info_action: None,
         }
     }
 
@@ -22,6 +24,10 @@ impl PackageList {
         if let Some(existing) = self.packages.iter_mut().find(|p| p.name == package.name) {
             *existing = package;
         }
+    }
+
+    pub fn get_show_info_action(&mut self) -> Option<Package> {
+        self.show_info_action.take()
     }
 
     pub fn show_filtered_with_search_and_pin(
@@ -143,6 +149,10 @@ impl PackageList {
                             if package.version.is_none() && !package.version_load_failed && !packages_loading_info.contains(&package.name) {
                                 if ui.button("Load Info").clicked() {
                                     *on_load_info = Some(package.clone());
+                                }
+                            } else if package.description.is_some() {
+                                if ui.button("Info").clicked() {
+                                    self.show_info_action = Some(package.clone());
                                 }
                             }
                         });

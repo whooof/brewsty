@@ -2,8 +2,13 @@ use std::collections::VecDeque;
 
 const MAX_LOG_SIZE: usize = 200;
 
+pub struct LogEntry {
+    pub message: String,
+    pub timestamp: std::time::SystemTime,
+}
+
 pub struct LogManager {
-    logs: VecDeque<String>,
+    logs: VecDeque<LogEntry>,
 }
 
 impl LogManager {
@@ -17,7 +22,10 @@ impl LogManager {
         if self.logs.len() >= MAX_LOG_SIZE {
             self.logs.pop_front();
         }
-        self.logs.push_back(message);
+        self.logs.push_back(LogEntry {
+            message,
+            timestamp: std::time::SystemTime::now(),
+        });
     }
 
     pub fn extend(&mut self, messages: Vec<String>) {
@@ -26,7 +34,7 @@ impl LogManager {
         }
     }
 
-    pub fn all_logs(&self) -> Vec<&String> {
+    pub fn all_logs(&self) -> Vec<&LogEntry> {
         self.logs.iter().collect()
     }
 }
