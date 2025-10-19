@@ -4,6 +4,7 @@ use egui::{Color32, RichText, ScrollArea};
 pub struct PackageList {
     packages: Vec<Package>,
     selected_package: Option<String>,
+    show_info_action: Option<Package>,
 }
 
 impl PackageList {
@@ -11,6 +12,7 @@ impl PackageList {
         Self {
             packages: Vec::new(),
             selected_package: None,
+            show_info_action: None,
         }
     }
 
@@ -24,49 +26,8 @@ impl PackageList {
         }
     }
 
-    pub fn show_filtered(
-        &mut self,
-        ui: &mut egui::Ui,
-        on_install: &mut Option<Package>,
-        on_uninstall: &mut Option<Package>,
-        on_update: &mut Option<Package>,
-        show_formulae: bool,
-        show_casks: bool,
-    ) {
-        self.show_filtered_with_search(ui, on_install, on_uninstall, on_update, show_formulae, show_casks, "");
-    }
-
-    pub fn show_filtered_with_search(
-        &mut self,
-        ui: &mut egui::Ui,
-        on_install: &mut Option<Package>,
-        on_uninstall: &mut Option<Package>,
-        on_update: &mut Option<Package>,
-        show_formulae: bool,
-        show_casks: bool,
-        search_query: &str,
-    ) {
-        self.show_filtered_with_search_and_load_info(
-            ui, on_install, on_uninstall, on_update, show_formulae, show_casks, search_query, &mut None, &std::collections::HashSet::new()
-        );
-    }
-
-    pub fn show_filtered_with_search_and_load_info(
-        &mut self,
-        ui: &mut egui::Ui,
-        on_install: &mut Option<Package>,
-        on_uninstall: &mut Option<Package>,
-        on_update: &mut Option<Package>,
-        show_formulae: bool,
-        show_casks: bool,
-        search_query: &str,
-        on_load_info: &mut Option<Package>,
-        packages_loading_info: &std::collections::HashSet<String>,
-    ) {
-        self.show_filtered_with_search_and_pin(
-            ui, on_install, on_uninstall, on_update, show_formulae, show_casks, search_query, 
-            on_load_info, packages_loading_info, &mut None, &mut None
-        );
+    pub fn get_show_info_action(&mut self) -> Option<Package> {
+        self.show_info_action.take()
     }
 
     pub fn show_filtered_with_search_and_pin(
@@ -188,6 +149,10 @@ impl PackageList {
                             if package.version.is_none() && !package.version_load_failed && !packages_loading_info.contains(&package.name) {
                                 if ui.button("Load Info").clicked() {
                                     *on_load_info = Some(package.clone());
+                                }
+                            } else if package.description.is_some() {
+                                if ui.button("Info").clicked() {
+                                    self.show_info_action = Some(package.clone());
                                 }
                             }
                         });

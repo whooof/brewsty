@@ -2,6 +2,19 @@
 
 A modern, GUI-based Homebrew package manager for macOS written in Rust.
 
+## ⚠️ Warning: AI-Generated Learning Project
+
+This codebase was largely pair-programmed with AI models (Claude, ChatGPT, etc.). Treat it as:
+- A sandbox for learning and architecture experiments
+- A case study in what AIs get right—and almost right
+- A living demo of clean architecture in Rust
+
+Disclaimer: It compiles, it runs, and it manages Homebrew, but parts were authored by statistically enthusiastic robots. Expect the occasional off-by-one joke, an overconfident TODO, or a function that’s suspiciously clever at 3am.
+
+Meta-note: Yes, an AI wrote this warning about AI-written code. Self-reference acknowledged; recursion depth limited; stack intact.
+
+Use, fork, and learn freely. If you find a bug, blame the robots, keep the credit.
+
 ## Features
 
 - 📦 **Package Management**
@@ -89,8 +102,11 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-MIT
+MIT License (Tortilla Edition 🌯)
+
+See [LICENSE.md](LICENSE.md) for details.
 
 ## Acknowledgments
 
 Built with [egui](https://github.com/emilk/egui) by [@emilk](https://github.com/emilk)
+

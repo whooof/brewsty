@@ -1,19 +1,22 @@
 use crate::application::UseCaseContainer;
 use crate::domain::entities::{Package, PackageType};
 use crate::presentation::components::{
-    CleanupAction, CleanupModal, CleanupType, FilterState, LogManager, PackageList, Tab, TabManager
+    CleanupAction, CleanupModal, CleanupType, FilterState, InfoModal, LogManager, PackageList, Tab, TabManager
 };
 use crate::presentation::services::{
     AsyncExecutor, AsyncTask, AsyncTaskManager, PackageOperationHandler
 };
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::Receiver;
 use std::thread;
 
 pub struct BrewstyApp {
     tab_manager: TabManager,
     filter_state: FilterState,
     cleanup_modal: CleanupModal,
+    info_modal: InfoModal,
     log_manager: LogManager,
+    log_rx: Receiver<String>,
     
     installed_packages: PackageList,
     outdated_packages: PackageList,
@@ -35,10 +38,11 @@ pub struct BrewstyApp {
     
     loading: bool,
     status_message: String,
+    output_panel_height: f32,
 }
 
 impl BrewstyApp {
-    pub fn new(use_cases: Arc<UseCaseContainer>) -> Self {
+    pub fn new(use_cases: Arc<UseCaseContainer>, log_rx: Receiver<String>) -> Self {
         let executor = AsyncExecutor::new();
         
         let package_ops = PackageOperationHandler::new(
@@ -54,7 +58,9 @@ impl BrewstyApp {
             tab_manager: TabManager::new(),
             filter_state: FilterState::new(),
             cleanup_modal: CleanupModal::new(),
+            info_modal: InfoModal::new(),
             log_manager: LogManager::new(),
+            log_rx,
             installed_packages: PackageList::new(),
             outdated_packages: PackageList::new(),
             search_results: PackageList::new(),
@@ -69,6 +75,7 @@ impl BrewstyApp {
             package_ops,
             loading: false,
             status_message: String::new(),
+            output_panel_height: 150.0,
         }
     }
 
@@ -630,6 +637,12 @@ impl BrewstyApp {
             ui.label(message);
         });
     }
+    
+    fn poll_logs(&mut self) {
+        while let Ok(log_entry) = self.log_rx.try_recv() {
+            self.log_manager.push(log_entry);
+        }
+    }
 }
 
 fn format_size(bytes: u64) -> String {
@@ -650,6 +663,7 @@ fn format_size(bytes: u64) -> String {
 
 impl eframe::App for BrewstyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.poll_logs();
         self.poll_async_tasks();
         ctx.request_repaint();
         
@@ -661,7 +675,7 @@ impl eframe::App for BrewstyApp {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("🍺 Brewsty");
-                ui.label("v0.1.0");
+                ui.label(format!("v{}", env!("CARGO_PKG_VERSION")));
                 ui.separator();
                 
                 if ui.selectable_label(self.tab_manager.is_current(Tab::Installed), "Installed").clicked() {
@@ -676,37 +690,49 @@ impl eframe::App for BrewstyApp {
                         self.load_outdated_packages();
                     }
                 }
-                if ui.selectable_label(self.tab_manager.is_current(Tab::Browse), "Browse").clicked() {
-                    self.tab_manager.switch_to(Tab::Browse);
+                if ui.selectable_label(self.tab_manager.is_current(Tab::SearchInstall), "Search & Install").clicked() {
+                    self.tab_manager.switch_to(Tab::SearchInstall);
                 }
-                if ui.selectable_label(self.tab_manager.is_current(Tab::Maintenance), "Maintenance").clicked() {
-                    self.tab_manager.switch_to(Tab::Maintenance);
+                if ui.selectable_label(self.tab_manager.is_current(Tab::Settings), "Settings").clicked() {
+                    self.tab_manager.switch_to(Tab::Settings);
+                }
+                if ui.selectable_label(self.tab_manager.is_current(Tab::Log), "Log").clicked() {
+                    self.tab_manager.switch_to(Tab::Log);
                 }
             });
         });
 
-        egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Status:");
-                if self.loading {
-                    ui.spinner();
-                }
-                ui.label(&self.status_message);
-            });
-            
-            ui.separator();
-            
-            ui.label("Output:");
-            egui::ScrollArea::vertical()
-                .max_height(100.0)
-                .stick_to_bottom(true)
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    for line in self.log_manager.recent() {
-                        ui.label(line);
+        egui::TopBottomPanel::bottom("bottom_panel")
+            .resizable(true)
+            .default_height(self.output_panel_height)
+            .show(ctx, |ui| {
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.add_space(ui.available_width() / 2.0 - 40.0);
+                    if ui.button("Clear Output").clicked() {
+                        self.log_manager = LogManager::new();
                     }
                 });
-        });
+                
+                ui.separator();
+                
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false; 2])
+                    .stick_to_bottom(true)
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        
+                        for entry in self.log_manager.all_logs() {
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new(format!("[{}]", entry.format_timestamp()))
+                                    .color(egui::Color32::GRAY).monospace());
+                                ui.monospace(&entry.message);
+                            });
+                        }
+                    });
+                
+                self.output_panel_height = ui.min_rect().height();
+            });
 
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.tab_manager.current() {
@@ -768,6 +794,9 @@ impl eframe::App for BrewstyApp {
                         }
                         if let Some(package) = unpin_action {
                             self.handle_unpin(package);
+                        }
+                        if let Some(package) = self.installed_packages.get_show_info_action() {
+                            self.info_modal.show(package);
                         }
                     }
                 }
@@ -831,10 +860,13 @@ impl eframe::App for BrewstyApp {
                         if let Some(package) = unpin_action {
                             self.handle_unpin(package);
                         }
+                        if let Some(package) = self.outdated_packages.get_show_info_action() {
+                            self.info_modal.show(package);
+                        }
                     }
                 }
 
-                Tab::Browse => {
+                Tab::SearchInstall => {
                     ui.horizontal(|ui| {
                         ui.label("Search:");
                         let response = ui.text_edit_singleline(self.filter_state.search_query_mut());
@@ -901,11 +933,14 @@ impl eframe::App for BrewstyApp {
                         if let Some(package) = unpin_action {
                             self.handle_unpin(package);
                         }
+                        if let Some(package) = self.search_results.get_show_info_action() {
+                            self.info_modal.show(package);
+                        }
                     }
                 }
 
-                Tab::Maintenance => {
-                    ui.heading("Maintenance Operations");
+                Tab::Settings => {
+                    ui.heading("Settings & Maintenance");
                     ui.separator();
 
                     ui.vertical_centered(|ui| {
@@ -929,6 +964,26 @@ impl eframe::App for BrewstyApp {
                         ui.label("Update all installed packages");
                     });
                 }
+
+                Tab::Log => {
+                    ui.heading("Command Log");
+                    ui.separator();
+                    
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false; 2])
+                        .stick_to_bottom(true)
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            
+                            for entry in self.log_manager.all_logs() {
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new(format!("[{}]", entry.format_timestamp()))
+                                        .color(egui::Color32::GRAY).monospace());
+                                    ui.monospace(&entry.message);
+                                });
+                            }
+                        });
+                }
             }
 
             if let Some(action) = self.cleanup_modal.render(ctx) {
@@ -944,6 +999,8 @@ impl eframe::App for BrewstyApp {
                     }
                 }
             }
+
+            self.info_modal.render(ctx);
         });
     }
 }

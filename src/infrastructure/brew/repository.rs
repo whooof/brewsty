@@ -33,7 +33,6 @@ impl BrewPackageRepository {
             PackageType::Cask => "casks",
         };
 
-        // Get the list of pinned packages
         let pinned_packages = self.get_pinned_packages().unwrap_or_default();
 
         if let Some(items) = data.get(items_key).and_then(|v| v.as_array()) {
@@ -71,7 +70,6 @@ impl BrewPackageRepository {
             PackageType::Cask => "casks",
         };
 
-        // Get the list of pinned packages
         let pinned_packages = self.get_pinned_packages().unwrap_or_default();
 
         if let Some(items) = data.get(items_key).and_then(|v| v.as_array()) {
@@ -163,6 +161,15 @@ impl BrewPackageRepository {
         }
         Ok(total)
     }
+
+    async fn log_brew_output(output: &crate::infrastructure::brew::command::BrewOutput) {
+        if !output.stdout.is_empty() {
+            tracing::info!("brew output: {}", output.stdout);
+        }
+        if !output.stderr.is_empty() {
+            tracing::info!("brew stderr: {}", output.stderr);
+        }
+    }
 }
 
 #[async_trait]
@@ -193,32 +200,48 @@ impl PackageRepository for BrewPackageRepository {
         let name = package.name.clone();
         let package_type = package.package_type.clone();
 
-        tokio::task::spawn_blocking(move || match package_type {
+        let output = tokio::task::spawn_blocking(move || match package_type {
             PackageType::Formula => BrewCommand::install_formula(&name),
             PackageType::Cask => BrewCommand::install_cask(&name),
         })
-        .await?
+        .await??;
+
+        Self::log_brew_output(&output).await;
+
+        Ok(())
     }
 
     async fn uninstall_package(&self, package: &Package) -> Result<()> {
         let name = package.name.clone();
         let package_type = package.package_type.clone();
 
-        tokio::task::spawn_blocking(move || match package_type {
+        let output = tokio::task::spawn_blocking(move || match package_type {
             PackageType::Formula => BrewCommand::uninstall_formula(&name),
             PackageType::Cask => BrewCommand::uninstall_cask(&name),
         })
-        .await?
+        .await??;
+
+        Self::log_brew_output(&output).await;
+
+        Ok(())
     }
 
     async fn update_package(&self, package: &Package) -> Result<()> {
         let name = package.name.clone();
 
-        tokio::task::spawn_blocking(move || BrewCommand::upgrade_package(&name)).await?
+        let output = tokio::task::spawn_blocking(move || BrewCommand::upgrade_package(&name)).await??;
+
+        Self::log_brew_output(&output).await;
+
+        Ok(())
     }
 
     async fn update_all(&self) -> Result<()> {
-        tokio::task::spawn_blocking(|| BrewCommand::upgrade_all()).await?
+        let output = tokio::task::spawn_blocking(|| BrewCommand::upgrade_all()).await??;
+
+        Self::log_brew_output(&output).await;
+
+        Ok(())
     }
 
     async fn get_cleanup_preview(&self) -> Result<CleanupPreview> {
@@ -232,11 +255,19 @@ impl PackageRepository for BrewPackageRepository {
     }
 
     async fn clean_cache(&self) -> Result<()> {
-        tokio::task::spawn_blocking(|| BrewCommand::cleanup()).await?
+        let output = tokio::task::spawn_blocking(|| BrewCommand::cleanup()).await??;
+
+        Self::log_brew_output(&output).await;
+
+        Ok(())
     }
 
     async fn cleanup_old_versions(&self) -> Result<()> {
-        tokio::task::spawn_blocking(|| BrewCommand::cleanup_old_versions()).await?
+        let output = tokio::task::spawn_blocking(|| BrewCommand::cleanup_old_versions()).await??;
+
+        Self::log_brew_output(&output).await;
+
+        Ok(())
     }
 
     async fn search_packages(&self, query: &str, package_type: PackageType) -> Result<Vec<Package>> {
@@ -328,11 +359,19 @@ impl PackageRepository for BrewPackageRepository {
 
     async fn pin_package(&self, package: &Package) -> Result<()> {
         let name = package.name.clone();
-        tokio::task::spawn_blocking(move || BrewCommand::pin_package(&name)).await?
+        let output = tokio::task::spawn_blocking(move || BrewCommand::pin_package(&name)).await??;
+
+        Self::log_brew_output(&output).await;
+
+        Ok(())
     }
 
-    async fn unpin_package(&self, package: &Package) -> Result<()> {
-        let name = package.name.clone();
-        tokio::task::spawn_blocking(move || BrewCommand::unpin_package(&name)).await?
-    }
+     async fn unpin_package(&self, package: &Package) -> Result<()> {
+         let name = package.name.clone();
+         let output = tokio::task::spawn_blocking(move || BrewCommand::unpin_package(&name)).await??;
+ 
+         Self::log_brew_output(&output).await;
+ 
+         Ok(())
+     }
 }
