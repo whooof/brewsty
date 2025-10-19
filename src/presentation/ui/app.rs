@@ -45,6 +45,8 @@ impl BrewstyApp {
             Arc::clone(&use_cases.install),
             Arc::clone(&use_cases.uninstall),
             Arc::clone(&use_cases.update),
+            Arc::clone(&use_cases.pin),
+            Arc::clone(&use_cases.unpin),
             executor.clone(),
         );
 
@@ -259,6 +261,54 @@ impl BrewstyApp {
             self.tab_manager.mark_unloaded(Tab::Outdated);
             self.load_installed_packages();
             self.load_outdated_packages();
+        }
+    }
+
+    fn handle_pin(&mut self, package: Package) {
+        self.loading = true;
+        self.status_message = format!("Pinning {}...", package.name);
+        
+        let result = self.package_ops.pin(package);
+        
+        self.status_message = result.message;
+        self.log_manager.extend(result.log_messages);
+        self.loading = false;
+        
+        if result.success {
+            // Mark tabs as unloaded so they reload when accessed
+            self.tab_manager.mark_unloaded(Tab::Installed);
+            self.tab_manager.mark_unloaded(Tab::Outdated);
+            
+            // Reload the current tab immediately
+            match self.tab_manager.current() {
+                Tab::Installed => self.load_installed_packages(),
+                Tab::Outdated => self.load_outdated_packages(),
+                _ => {}
+            }
+        }
+    }
+
+    fn handle_unpin(&mut self, package: Package) {
+        self.loading = true;
+        self.status_message = format!("Unpinning {}...", package.name);
+        
+        let result = self.package_ops.unpin(package);
+        
+        self.status_message = result.message;
+        self.log_manager.extend(result.log_messages);
+        self.loading = false;
+        
+        if result.success {
+            // Mark tabs as unloaded so they reload when accessed
+            self.tab_manager.mark_unloaded(Tab::Installed);
+            self.tab_manager.mark_unloaded(Tab::Outdated);
+            
+            // Reload the current tab immediately
+            match self.tab_manager.current() {
+                Tab::Installed => self.load_installed_packages(),
+                Tab::Outdated => self.load_outdated_packages(),
+                _ => {}
+            }
         }
     }
 
@@ -685,8 +735,12 @@ impl eframe::App for BrewstyApp {
                         let mut install_action = None;
                         let mut uninstall_action = None;
                         let mut update_action = None;
+                        let mut pin_action = None;
+                        let mut unpin_action = None;
+                        let mut load_info_action = None;
+                        let empty_loading_set = std::collections::HashSet::new();
 
-                        self.installed_packages.show_filtered_with_search(
+                        self.installed_packages.show_filtered_with_search_and_pin(
                             ui,
                             &mut install_action,
                             &mut uninstall_action,
@@ -694,6 +748,10 @@ impl eframe::App for BrewstyApp {
                             self.filter_state.show_formulae(),
                             self.filter_state.show_casks(),
                             self.filter_state.installed_search_query(),
+                            &mut load_info_action,
+                            &empty_loading_set,
+                            &mut pin_action,
+                            &mut unpin_action,
                         );
 
                         if let Some(package) = install_action {
@@ -704,6 +762,12 @@ impl eframe::App for BrewstyApp {
                         }
                         if let Some(package) = update_action {
                             self.handle_update(package);
+                        }
+                        if let Some(package) = pin_action {
+                            self.handle_pin(package);
+                        }
+                        if let Some(package) = unpin_action {
+                            self.handle_unpin(package);
                         }
                     }
                 }
@@ -733,14 +797,23 @@ impl eframe::App for BrewstyApp {
                         let mut install_action = None;
                         let mut uninstall_action = None;
                         let mut update_action = None;
+                        let mut pin_action = None;
+                        let mut unpin_action = None;
+                        let mut load_info_action = None;
+                        let empty_loading_set = std::collections::HashSet::new();
 
-                        self.outdated_packages.show_filtered(
+                        self.outdated_packages.show_filtered_with_search_and_pin(
                             ui,
                             &mut install_action,
                             &mut uninstall_action,
                             &mut update_action,
                             self.filter_state.show_formulae(),
                             self.filter_state.show_casks(),
+                            "",
+                            &mut load_info_action,
+                            &empty_loading_set,
+                            &mut pin_action,
+                            &mut unpin_action,
                         );
 
                         if let Some(package) = install_action {
@@ -751,6 +824,12 @@ impl eframe::App for BrewstyApp {
                         }
                         if let Some(package) = update_action {
                             self.handle_update(package);
+                        }
+                        if let Some(package) = pin_action {
+                            self.handle_pin(package);
+                        }
+                        if let Some(package) = unpin_action {
+                            self.handle_unpin(package);
                         }
                     }
                 }
@@ -787,8 +866,10 @@ impl eframe::App for BrewstyApp {
                         let mut uninstall_action = None;
                         let mut update_action = None;
                         let mut load_info_action = None;
+                        let mut pin_action = None;
+                        let mut unpin_action = None;
 
-                        self.search_results.show_filtered_with_search_and_load_info(
+                        self.search_results.show_filtered_with_search_and_pin(
                             ui,
                             &mut install_action,
                             &mut uninstall_action,
@@ -798,6 +879,8 @@ impl eframe::App for BrewstyApp {
                             "",
                             &mut load_info_action,
                             self.task_manager.get_loading_info(),
+                            &mut pin_action,
+                            &mut unpin_action,
                         );
 
                         if let Some(package) = install_action {
@@ -811,6 +894,12 @@ impl eframe::App for BrewstyApp {
                         }
                         if let Some(package) = load_info_action {
                             self.load_package_info(package.name.clone(), package.package_type);
+                        }
+                        if let Some(package) = pin_action {
+                            self.handle_pin(package);
+                        }
+                        if let Some(package) = unpin_action {
+                            self.handle_unpin(package);
                         }
                     }
                 }

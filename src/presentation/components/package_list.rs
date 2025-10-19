@@ -63,6 +63,26 @@ impl PackageList {
         on_load_info: &mut Option<Package>,
         packages_loading_info: &std::collections::HashSet<String>,
     ) {
+        self.show_filtered_with_search_and_pin(
+            ui, on_install, on_uninstall, on_update, show_formulae, show_casks, search_query, 
+            on_load_info, packages_loading_info, &mut None, &mut None
+        );
+    }
+
+    pub fn show_filtered_with_search_and_pin(
+        &mut self,
+        ui: &mut egui::Ui,
+        on_install: &mut Option<Package>,
+        on_uninstall: &mut Option<Package>,
+        on_update: &mut Option<Package>,
+        show_formulae: bool,
+        show_casks: bool,
+        search_query: &str,
+        on_load_info: &mut Option<Package>,
+        packages_loading_info: &std::collections::HashSet<String>,
+        on_pin: &mut Option<Package>,
+        on_unpin: &mut Option<Package>,
+    ) {
         let search_lower = search_query.to_lowercase();
         
         ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -120,13 +140,17 @@ impl PackageList {
                             ui.spinner();
                         } else if package.version_load_failed {
                             ui.label(RichText::new(version_text).color(Color32::from_rgb(255, 0, 0)));
+                        } else if package.pinned {
+                            ui.label(RichText::new(version_text).color(Color32::from_rgb(255, 200, 0)));
                         } else {
                             ui.label(version_text);
                         }
                         
                         ui.label(package.package_type.to_string());
 
-                        let status_text = if package.outdated {
+                        let status_text = if package.pinned {
+                            RichText::new("Pinned").color(Color32::from_rgb(255, 200, 0))
+                        } else if package.outdated {
                             RichText::new("Outdated").color(Color32::from_rgb(255, 165, 0))
                         } else if package.installed {
                             RichText::new("Installed").color(Color32::from_rgb(0, 255, 0))
@@ -140,8 +164,20 @@ impl PackageList {
                                 if ui.button("Uninstall").clicked() {
                                     *on_uninstall = Some(package.clone());
                                 }
-                                if package.outdated && ui.button("Update").clicked() {
+                                if package.outdated && !package.pinned && ui.button("Update").clicked() {
                                     *on_update = Some(package.clone());
+                                }
+                                // Only show pin/unpin for formulae (casks don't support pinning in Homebrew)
+                                if matches!(package.package_type, PackageType::Formula) {
+                                    if package.pinned {
+                                        if ui.button("Unpin").clicked() {
+                                            *on_unpin = Some(package.clone());
+                                        }
+                                    } else {
+                                        if ui.button("Pin").clicked() {
+                                            *on_pin = Some(package.clone());
+                                        }
+                                    }
                                 }
                             } else {
                                 if ui.button("Install").clicked() {

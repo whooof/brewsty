@@ -231,4 +231,40 @@ impl BrewCommand {
 
         Ok(String::from_utf8(output.stdout)?)
     }
+
+    pub fn list_pinned() -> Result<String> {
+        let output = Command::new("brew")
+            .args(["list", "--pinned"])
+            .output()?;
+
+        if !output.status.success() {
+            return Err(anyhow!("Failed to list pinned packages: {}", String::from_utf8_lossy(&output.stderr)));
+        }
+
+        Ok(String::from_utf8(output.stdout)?)
+    }
+
+    pub fn pin_package(name: &str) -> Result<()> {
+        let output = Command::new("brew")
+            .args(["pin", name])
+            .output()?;
+
+        if !output.status.success() {
+            return Err(anyhow!("Failed to pin package: {}", String::from_utf8_lossy(&output.stderr)));
+        }
+
+        Ok(())
+    }
+
+    pub fn unpin_package(name: &str) -> Result<()> {
+        let output = Command::new("brew")
+            .args(["unpin", name])
+            .output()?;
+
+        if !output.status.success() {
+            return Err(anyhow!("Failed to unpin package: {}", String::from_utf8_lossy(&output.stderr)));
+        }
+
+        Ok(())
+    }
 }

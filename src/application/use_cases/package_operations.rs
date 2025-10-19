@@ -152,3 +152,31 @@ impl GetPackageInfo {
         self.repository.get_package_info(name, package_type).await
     }
 }
+
+pub struct PinPackage {
+    repository: Arc<dyn PackageRepository>,
+}
+
+impl PinPackage {
+    pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
+        Self { repository }
+    }
+
+    pub async fn execute(&self, package: Package) -> Result<()> {
+        self.repository.pin_package(&package).await
+    }
+}
+
+pub struct UnpinPackage {
+    repository: Arc<dyn PackageRepository>,
+}
+
+impl UnpinPackage {
+    pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
+        Self { repository }
+    }
+
+    pub async fn execute(&self, package: Package) -> Result<()> {
+        self.repository.unpin_package(&package).await
+    }
+}

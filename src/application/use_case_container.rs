@@ -13,6 +13,8 @@ pub struct UseCaseContainer {
     pub cleanup_old_versions: Arc<CleanupOldVersions>,
     pub search: Arc<SearchPackages>,
     pub get_package_info: Arc<GetPackageInfo>,
+    pub pin: Arc<PinPackage>,
+    pub unpin: Arc<UnpinPackage>,
 }
 
 impl UseCaseContainer {
@@ -28,6 +30,8 @@ impl UseCaseContainer {
             cleanup_old_versions: Arc::new(CleanupOldVersions::new(Arc::clone(&repository))),
             search: Arc::new(SearchPackages::new(Arc::clone(&repository))),
             get_package_info: Arc::new(GetPackageInfo::new(Arc::clone(&repository))),
+            pin: Arc::new(PinPackage::new(Arc::clone(&repository))),
+            unpin: Arc::new(UnpinPackage::new(Arc::clone(&repository))),
         }
     }
 }
