@@ -21,6 +21,48 @@ pub enum AsyncTask {
         result: Arc<Mutex<Option<Package>>>,
         started_at: std::time::Instant,
     },
+    Install {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    Uninstall {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    Update {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    UpdateAll {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    CleanCache {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    CleanupOldVersions {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    Pin {
+        package_name: String,
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    Unpin {
+        package_name: String,
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
 }
 
 pub struct TaskResult {
@@ -30,6 +72,14 @@ pub struct TaskResult {
     pub package_info: Option<(String, Package)>,
     pub logs: Vec<String>,
     pub completed_package_info_loads: Vec<String>,
+    pub install_completed: Option<(bool, String)>,
+    pub uninstall_completed: Option<(bool, String)>,
+    pub update_completed: Option<(bool, String)>,
+    pub update_all_completed: Option<(bool, String)>,
+    pub clean_cache_completed: Option<(bool, String)>,
+    pub cleanup_old_versions_completed: Option<(bool, String)>,
+    pub pin_completed: Option<(String, bool, String)>,
+    pub unpin_completed: Option<(String, bool, String)>,
 }
 
 pub struct AsyncTaskManager {
@@ -88,10 +138,6 @@ impl AsyncTaskManager {
         self.pending_package_info_loads.len()
     }
 
-    pub fn get_loading_info(&self) -> &HashSet<String> {
-        &self.packages_loading_info
-    }
-
     pub fn poll(&mut self) -> TaskResult {
         let mut result = TaskResult {
             installed_packages: None,
@@ -100,6 +146,14 @@ impl AsyncTaskManager {
             package_info: None,
             logs: Vec::new(),
             completed_package_info_loads: Vec::new(),
+            install_completed: None,
+            uninstall_completed: None,
+            update_completed: None,
+            update_all_completed: None,
+            clean_cache_completed: None,
+            cleanup_old_versions_completed: None,
+            pin_completed: None,
+            unpin_completed: None,
         };
 
         let mut tasks_to_keep = Vec::new();
@@ -212,6 +266,182 @@ impl AsyncTaskManager {
                     
                     if should_put_back {
                         self.active_task = Some(AsyncTask::Search { results, logs });
+                    }
+                }
+                AsyncTask::Install { success, logs, message } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.install_completed = Some((succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true,
+                    };
+                    
+                    if should_put_back {
+                        self.active_task = Some(AsyncTask::Install { success, logs, message });
+                    }
+                }
+                AsyncTask::Uninstall { success, logs, message } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.uninstall_completed = Some((succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true,
+                    };
+                    
+                    if should_put_back {
+                        self.active_task = Some(AsyncTask::Uninstall { success, logs, message });
+                    }
+                }
+                AsyncTask::Update { success, logs, message } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.update_completed = Some((succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true,
+                    };
+                    
+                    if should_put_back {
+                        self.active_task = Some(AsyncTask::Update { success, logs, message });
+                    }
+                }
+                AsyncTask::UpdateAll { success, logs, message } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.update_all_completed = Some((succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true,
+                    };
+                    
+                    if should_put_back {
+                        self.active_task = Some(AsyncTask::UpdateAll { success, logs, message });
+                    }
+                }
+                AsyncTask::CleanCache { success, logs, message } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.clean_cache_completed = Some((succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true,
+                    };
+                    
+                    if should_put_back {
+                        self.active_task = Some(AsyncTask::CleanCache { success, logs, message });
+                    }
+                }
+                AsyncTask::CleanupOldVersions { success, logs, message } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.cleanup_old_versions_completed = Some((succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true,
+                    };
+                    
+                    if should_put_back {
+                        self.active_task = Some(AsyncTask::CleanupOldVersions { success, logs, message });
+                    }
+                }
+                AsyncTask::Pin { package_name, success, logs, message } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.pin_completed = Some((package_name.clone(), succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true,
+                    };
+                    
+                    if should_put_back {
+                        self.active_task = Some(AsyncTask::Pin { package_name, success, logs, message });
+                    }
+                }
+                AsyncTask::Unpin { package_name, success, logs, message } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.unpin_completed = Some((package_name.clone(), succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true,
+                    };
+                    
+                    if should_put_back {
+                        self.active_task = Some(AsyncTask::Unpin { package_name, success, logs, message });
                     }
                 }
                 AsyncTask::LoadPackageInfo { .. } => {

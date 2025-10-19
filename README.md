@@ -28,6 +28,7 @@ Use, fork, and learn freely. If you find a bug, blame the robots, keep the credi
   - Check for outdated packages
   - Install, uninstall, and update packages
   - Search for available packages
+  - Pin and unpin packages to prevent updates
 
 - 🧹 **Maintenance**
   - Clean package cache
@@ -38,6 +39,7 @@ Use, fork, and learn freely. If you find a bug, blame the robots, keep the credi
   - Clean, intuitive interface built with egui
   - Tab-based navigation
   - Async operations with responsive UI
+  - Real-time loading indicators for package operations
 
 ## Architecture
 

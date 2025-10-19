@@ -4,7 +4,7 @@ use crate::presentation::components::{
     CleanupAction, CleanupModal, CleanupType, FilterState, InfoModal, LogManager, PackageList, Tab, TabManager
 };
 use crate::presentation::services::{
-    AsyncExecutor, AsyncTask, AsyncTaskManager, PackageOperationHandler
+    AsyncExecutor, AsyncTask, AsyncTaskManager
 };
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Receiver;
@@ -30,11 +30,22 @@ pub struct BrewstyApp {
     loading_outdated: bool,
     loading_search: bool,
     
+    loading_install: bool,
+    loading_uninstall: bool,
+    loading_update: bool,
+    loading_update_all: bool,
+    loading_clean_cache: bool,
+    loading_cleanup_old_versions: bool,
+    
+    current_install_package: Option<String>,
+    current_uninstall_package: Option<String>,
+    current_update_package: Option<String>,
+    packages_in_operation: std::collections::HashSet<String>,
+    
     task_manager: AsyncTaskManager,
     
     use_cases: Arc<UseCaseContainer>,
     executor: AsyncExecutor,
-    package_ops: PackageOperationHandler,
     
     loading: bool,
     status_message: String,
@@ -44,15 +55,6 @@ pub struct BrewstyApp {
 impl BrewstyApp {
     pub fn new(use_cases: Arc<UseCaseContainer>, log_rx: Receiver<String>) -> Self {
         let executor = AsyncExecutor::new();
-        
-        let package_ops = PackageOperationHandler::new(
-            Arc::clone(&use_cases.install),
-            Arc::clone(&use_cases.uninstall),
-            Arc::clone(&use_cases.update),
-            Arc::clone(&use_cases.pin),
-            Arc::clone(&use_cases.unpin),
-            executor.clone(),
-        );
 
         Self {
             tab_manager: TabManager::new(),
@@ -69,10 +71,19 @@ impl BrewstyApp {
             loading_installed: false,
             loading_outdated: false,
             loading_search: false,
-            task_manager: AsyncTaskManager::new(),
+            loading_install: false,
+            loading_uninstall: false,
+            loading_update: false,
+             loading_update_all: false,
+             loading_clean_cache: false,
+             loading_cleanup_old_versions: false,
+             current_install_package: None,
+             current_uninstall_package: None,
+             current_update_package: None,
+             packages_in_operation: std::collections::HashSet::new(),
+             task_manager: AsyncTaskManager::new(),
             use_cases,
             executor,
-            package_ops,
             loading: false,
             status_message: String::new(),
             output_panel_height: 150.0,
@@ -222,134 +233,312 @@ impl BrewstyApp {
     }
 
     fn handle_install(&mut self, package: Package) {
+        if self.loading_install {
+            return;
+        }
+        
+        let package_name = package.name.clone();
+        self.loading_install = true;
         self.loading = true;
+        self.current_install_package = Some(package_name.clone());
+        self.packages_in_operation.insert(package_name.clone());
         self.status_message = format!("Installing {}...", package.name);
         
-        let result = self.package_ops.install(package);
+        let package_type = package.package_type.clone();
+        let initial_msg = format!("Installing package: {} ({:?})", package_name, package_type);
+        self.log_manager.push(initial_msg.clone());
+        tracing::info!("{}", initial_msg);
+
+        let success = Arc::new(Mutex::new(None));
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let message = Arc::new(Mutex::new(String::new()));
         
-        self.status_message = result.message;
-        self.log_manager.extend(result.log_messages);
-        self.loading = false;
+        self.task_manager.set_active_task(AsyncTask::Install {
+            success: Arc::clone(&success),
+            logs: Arc::clone(&logs),
+            message: Arc::clone(&message),
+        });
+
+        let use_case = Arc::clone(&self.use_cases.install);
+        let executor = self.executor.clone();
         
-        if result.success {
-            self.tab_manager.mark_unloaded(Tab::Installed);
-            self.load_installed_packages();
-        }
+        thread::spawn(move || {
+            let result = executor.execute(async move {
+                use_case.execute(package).await
+            });
+
+            let mut log_vec = Vec::new();
+            match result {
+                Ok(_) => {
+                    let msg = format!("Successfully installed {}", package_name);
+                    log_vec.push(msg.clone());
+                    tracing::info!("{}", msg);
+                    *success.lock().unwrap() = Some(true);
+                    *message.lock().unwrap() = format!("{} installed successfully", package_name);
+                }
+                Err(e) => {
+                    let msg = format!("Error installing {}: {}", package_name, e);
+                    log_vec.push(msg.clone());
+                    tracing::error!("{}", msg);
+                    *success.lock().unwrap() = Some(false);
+                    *message.lock().unwrap() = msg;
+                }
+            }
+            
+            *logs.lock().unwrap() = log_vec;
+        });
     }
 
     fn handle_uninstall(&mut self, package: Package) {
+        if self.loading_uninstall {
+            return;
+        }
+        
+        let package_name = package.name.clone();
+        self.loading_uninstall = true;
         self.loading = true;
+        self.current_uninstall_package = Some(package_name.clone());
+        self.packages_in_operation.insert(package_name.clone());
         self.status_message = format!("Uninstalling {}...", package.name);
         
-        let result = self.package_ops.uninstall(package);
         
-        self.status_message = result.message;
-        self.log_manager.extend(result.log_messages);
-        self.loading = false;
+        let package_type = package.package_type.clone();
+        let initial_msg = format!("Uninstalling package: {} ({:?})", package_name, package_type);
+        self.log_manager.push(initial_msg.clone());
+        tracing::info!("{}", initial_msg);
+
+        let success = Arc::new(Mutex::new(None));
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let message = Arc::new(Mutex::new(String::new()));
         
-        if result.success {
-            self.tab_manager.mark_unloaded(Tab::Installed);
-            self.load_installed_packages();
-        }
+        self.task_manager.set_active_task(AsyncTask::Uninstall {
+            success: Arc::clone(&success),
+            logs: Arc::clone(&logs),
+            message: Arc::clone(&message),
+        });
+
+        let use_case = Arc::clone(&self.use_cases.uninstall);
+        let executor = self.executor.clone();
+        
+        thread::spawn(move || {
+            let result = executor.execute(async move {
+                use_case.execute(package).await
+            });
+
+            let mut log_vec = Vec::new();
+            match result {
+                Ok(_) => {
+                    let msg = format!("Successfully uninstalled {}", package_name);
+                    log_vec.push(msg.clone());
+                    tracing::info!("{}", msg);
+                    *success.lock().unwrap() = Some(true);
+                    *message.lock().unwrap() = format!("{} uninstalled successfully", package_name);
+                }
+                Err(e) => {
+                    let msg = format!("Error uninstalling {}: {}", package_name, e);
+                    log_vec.push(msg.clone());
+                    tracing::error!("{}", msg);
+                    *success.lock().unwrap() = Some(false);
+                    *message.lock().unwrap() = msg;
+                }
+            }
+            
+            *logs.lock().unwrap() = log_vec;
+        });
     }
 
     fn handle_update(&mut self, package: Package) {
+        if self.loading_update {
+            return;
+        }
+        
+        let package_name = package.name.clone();
+        self.loading_update = true;
         self.loading = true;
+        self.current_update_package = Some(package_name.clone());
+        self.packages_in_operation.insert(package_name.clone());
         self.status_message = format!("Updating {}...", package.name);
         
-        let result = self.package_ops.update(package);
+        let package_type = package.package_type.clone();
+        let initial_msg = format!("Updating package: {} ({:?})", package_name, package_type);
+        self.log_manager.push(initial_msg.clone());
+        tracing::info!("{}", initial_msg);
+
+        let success = Arc::new(Mutex::new(None));
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let message = Arc::new(Mutex::new(String::new()));
         
-        self.status_message = result.message;
-        self.log_manager.extend(result.log_messages);
-        self.loading = false;
+        self.task_manager.set_active_task(AsyncTask::Update {
+            success: Arc::clone(&success),
+            logs: Arc::clone(&logs),
+            message: Arc::clone(&message),
+        });
+
+        let use_case = Arc::clone(&self.use_cases.update);
+        let executor = self.executor.clone();
         
-        if result.success {
-            self.tab_manager.mark_unloaded(Tab::Installed);
-            self.tab_manager.mark_unloaded(Tab::Outdated);
-            self.load_installed_packages();
-            self.load_outdated_packages();
-        }
+        thread::spawn(move || {
+            let result = executor.execute(async move {
+                use_case.execute(package).await
+            });
+
+            let mut log_vec = Vec::new();
+            match result {
+                Ok(_) => {
+                    let msg = format!("Successfully updated {}", package_name);
+                    log_vec.push(msg.clone());
+                    tracing::info!("{}", msg);
+                    *success.lock().unwrap() = Some(true);
+                    *message.lock().unwrap() = format!("{} updated successfully", package_name);
+                }
+                Err(e) => {
+                    let msg = format!("Error updating {}: {}", package_name, e);
+                    log_vec.push(msg.clone());
+                    tracing::error!("{}", msg);
+                    *success.lock().unwrap() = Some(false);
+                    *message.lock().unwrap() = msg;
+                }
+            }
+            
+            *logs.lock().unwrap() = log_vec;
+        });
     }
 
     fn handle_pin(&mut self, package: Package) {
         self.loading = true;
+        self.packages_in_operation.insert(package.name.clone());
         self.status_message = format!("Pinning {}...", package.name);
         
-        let result = self.package_ops.pin(package);
+        let package_name = package.name.clone();
+        let package_type = package.package_type.clone();
+        let initial_msg = format!("Pinning package: {} ({:?})", package_name, package_type);
+        self.log_manager.push(initial_msg.clone());
+        tracing::info!("{}", initial_msg);
+
+        let success = Arc::new(Mutex::new(None));
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let message = Arc::new(Mutex::new(String::new()));
         
-        self.status_message = result.message;
-        self.log_manager.extend(result.log_messages);
-        self.loading = false;
-        
-        if result.success {
-            // Mark tabs as unloaded so they reload when accessed
-            self.tab_manager.mark_unloaded(Tab::Installed);
-            self.tab_manager.mark_unloaded(Tab::Outdated);
-            
-            // Reload the current tab immediately
-            match self.tab_manager.current() {
-                Tab::Installed => self.load_installed_packages(),
-                Tab::Outdated => self.load_outdated_packages(),
-                _ => {}
+        self.task_manager.set_active_task(AsyncTask::Pin {
+            package_name: package.name.clone(),
+            success: Arc::clone(&success),
+            logs: Arc::clone(&logs),
+            message: Arc::clone(&message),
+        });
+
+        let use_case = Arc::clone(&self.use_cases.pin);
+        let package_clone = package.clone();
+
+        self.executor.execute(async move {
+            match use_case.execute(package_clone).await {
+                Ok(_) => {
+                    let msg = format!("Successfully pinned {}", package_name);
+                    *logs.lock().unwrap() = vec![msg.clone()];
+                    *success.lock().unwrap() = Some(true);
+                    *message.lock().unwrap() = format!("{} pinned successfully", package_name);
+                }
+                Err(e) => {
+                    let msg = format!("Error pinning {}: {}", package_name, e);
+                    *logs.lock().unwrap() = vec![msg.clone()];
+                    *success.lock().unwrap() = Some(false);
+                    *message.lock().unwrap() = msg;
+                }
             }
-        }
+        });
     }
 
     fn handle_unpin(&mut self, package: Package) {
         self.loading = true;
+        self.packages_in_operation.insert(package.name.clone());
         self.status_message = format!("Unpinning {}...", package.name);
         
-        let result = self.package_ops.unpin(package);
+        let package_name = package.name.clone();
+        let package_type = package.package_type.clone();
+        let initial_msg = format!("Unpinning package: {} ({:?})", package_name, package_type);
+        self.log_manager.push(initial_msg.clone());
+        tracing::info!("{}", initial_msg);
+
+        let success = Arc::new(Mutex::new(None));
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let message = Arc::new(Mutex::new(String::new()));
         
-        self.status_message = result.message;
-        self.log_manager.extend(result.log_messages);
-        self.loading = false;
-        
-        if result.success {
-            // Mark tabs as unloaded so they reload when accessed
-            self.tab_manager.mark_unloaded(Tab::Installed);
-            self.tab_manager.mark_unloaded(Tab::Outdated);
-            
-            // Reload the current tab immediately
-            match self.tab_manager.current() {
-                Tab::Installed => self.load_installed_packages(),
-                Tab::Outdated => self.load_outdated_packages(),
-                _ => {}
-            }
-        }
+        self.task_manager.set_active_task(AsyncTask::Unpin {
+            package_name: package.name.clone(),
+            success: Arc::clone(&success),
+            logs: Arc::clone(&logs),
+            message: Arc::clone(&message),
+        });
+
+         let use_case = Arc::clone(&self.use_cases.unpin);
+         let package_clone = package.clone();
+
+         self.executor.execute(async move {
+             match use_case.execute(package_clone).await {
+                 Ok(_) => {
+                     let msg = format!("Successfully unpinned {}", package_name);
+                     *logs.lock().unwrap() = vec![msg.clone()];
+                     *success.lock().unwrap() = Some(true);
+                     *message.lock().unwrap() = format!("{} unpinned successfully", package_name);
+                 }
+                 Err(e) => {
+                     let msg = format!("Error unpinning {}: {}", package_name, e);
+                     *logs.lock().unwrap() = vec![msg.clone()];
+                     *success.lock().unwrap() = Some(false);
+                     *message.lock().unwrap() = msg;
+                 }
+             }
+         });
     }
 
     fn handle_update_all(&mut self) {
+        if self.loading_update_all {
+            return;
+        }
+        
+        self.loading_update_all = true;
         self.loading = true;
         self.status_message = "Updating all packages...".to_string();
         self.log_manager.push("Updating all packages".to_string());
         tracing::info!("Updating all packages");
 
-        let use_case = Arc::clone(&self.use_cases.update_all);
-        let result = self.executor.execute(async {
-            use_case.execute().await
+        let success = Arc::new(Mutex::new(None));
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let message = Arc::new(Mutex::new(String::new()));
+        
+        self.task_manager.set_active_task(AsyncTask::UpdateAll {
+            success: Arc::clone(&success),
+            logs: Arc::clone(&logs),
+            message: Arc::clone(&message),
         });
 
-        match result {
-            Ok(_) => {
-                let msg = "Successfully updated all packages".to_string();
-                self.log_manager.push(msg.clone());
-                tracing::info!("{}", msg);
-                self.status_message = "All packages updated successfully".to_string();
-                self.tab_manager.mark_unloaded(Tab::Installed);
-                self.tab_manager.mark_unloaded(Tab::Outdated);
-                self.load_installed_packages();
-                self.load_outdated_packages();
-            }
-            Err(e) => {
-                let msg = format!("Error updating all packages: {}", e);
-                self.log_manager.push(msg.clone());
-                tracing::error!("{}", msg);
-                self.status_message = msg;
-            }
-        }
+        let use_case = Arc::clone(&self.use_cases.update_all);
+        let executor = self.executor.clone();
+        
+        thread::spawn(move || {
+            let result = executor.execute(async move {
+                use_case.execute().await
+            });
 
-        self.loading = false;
+            let mut log_vec = Vec::new();
+            match result {
+                Ok(_) => {
+                    let msg = "Successfully updated all packages".to_string();
+                    log_vec.push(msg.clone());
+                    tracing::info!("{}", msg);
+                    *success.lock().unwrap() = Some(true);
+                    *message.lock().unwrap() = "All packages updated successfully".to_string();
+                }
+                Err(e) => {
+                    let msg = format!("Error updating all packages: {}", e);
+                    log_vec.push(msg.clone());
+                    tracing::error!("{}", msg);
+                    *success.lock().unwrap() = Some(false);
+                    *message.lock().unwrap() = msg;
+                }
+            }
+            
+            *logs.lock().unwrap() = log_vec;
+        });
     }
 
     fn show_cleanup_preview(&mut self, cleanup_type: CleanupType) {
@@ -387,63 +576,105 @@ impl BrewstyApp {
     }
 
     fn handle_clean_cache(&mut self) {
+        if self.loading_clean_cache {
+            return;
+        }
+        
+        self.loading_clean_cache = true;
         self.loading = true;
         self.status_message = "Cleaning cache...".to_string();
         self.log_manager.push("Cleaning Homebrew cache".to_string());
         tracing::info!("Cleaning Homebrew cache");
 
-        let use_case = Arc::clone(&self.use_cases.clean_cache);
-        let result = self.executor.execute(async {
-            use_case.execute().await
+        let success = Arc::new(Mutex::new(None));
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let message = Arc::new(Mutex::new(String::new()));
+        
+        self.task_manager.set_active_task(AsyncTask::CleanCache {
+            success: Arc::clone(&success),
+            logs: Arc::clone(&logs),
+            message: Arc::clone(&message),
         });
 
-        match result {
-            Ok(_) => {
-                let msg = "Successfully cleaned cache".to_string();
-                self.log_manager.push(msg.clone());
-                tracing::info!("{}", msg);
-                self.status_message = "Cache cleaned successfully".to_string();
-            }
-            Err(e) => {
-                let msg = format!("Error cleaning cache: {}", e);
-                self.log_manager.push(msg.clone());
-                tracing::error!("{}", msg);
-                self.status_message = msg;
-            }
-        }
+        let use_case = Arc::clone(&self.use_cases.clean_cache);
+        let executor = self.executor.clone();
+        
+        thread::spawn(move || {
+            let result = executor.execute(async move {
+                use_case.execute().await
+            });
 
-        self.loading = false;
-        self.cleanup_modal.close();
+            let mut log_vec = Vec::new();
+            match result {
+                Ok(_) => {
+                    let msg = "Successfully cleaned cache".to_string();
+                    log_vec.push(msg.clone());
+                    tracing::info!("{}", msg);
+                    *success.lock().unwrap() = Some(true);
+                    *message.lock().unwrap() = "Cache cleaned successfully".to_string();
+                }
+                Err(e) => {
+                    let msg = format!("Error cleaning cache: {}", e);
+                    log_vec.push(msg.clone());
+                    tracing::error!("{}", msg);
+                    *success.lock().unwrap() = Some(false);
+                    *message.lock().unwrap() = msg;
+                }
+            }
+            
+            *logs.lock().unwrap() = log_vec;
+        });
     }
 
     fn handle_cleanup_old_versions(&mut self) {
+        if self.loading_cleanup_old_versions {
+            return;
+        }
+        
+        self.loading_cleanup_old_versions = true;
         self.loading = true;
         self.status_message = "Cleaning up old versions...".to_string();
         self.log_manager.push("Cleaning up old versions".to_string());
         tracing::info!("Cleaning up old versions");
 
-        let use_case = Arc::clone(&self.use_cases.cleanup_old_versions);
-        let result = self.executor.execute(async {
-            use_case.execute().await
+        let success = Arc::new(Mutex::new(None));
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let message = Arc::new(Mutex::new(String::new()));
+        
+        self.task_manager.set_active_task(AsyncTask::CleanupOldVersions {
+            success: Arc::clone(&success),
+            logs: Arc::clone(&logs),
+            message: Arc::clone(&message),
         });
 
-        match result {
-            Ok(_) => {
-                let msg = "Successfully cleaned up old versions".to_string();
-                self.log_manager.push(msg.clone());
-                tracing::info!("{}", msg);
-                self.status_message = "Old versions cleaned up successfully".to_string();
-            }
-            Err(e) => {
-                let msg = format!("Error cleaning up old versions: {}", e);
-                self.log_manager.push(msg.clone());
-                tracing::error!("{}", msg);
-                self.status_message = msg;
-            }
-        }
+        let use_case = Arc::clone(&self.use_cases.cleanup_old_versions);
+        let executor = self.executor.clone();
+        
+        thread::spawn(move || {
+            let result = executor.execute(async move {
+                use_case.execute().await
+            });
 
-        self.loading = false;
-        self.cleanup_modal.close();
+            let mut log_vec = Vec::new();
+            match result {
+                Ok(_) => {
+                    let msg = "Successfully cleaned up old versions".to_string();
+                    log_vec.push(msg.clone());
+                    tracing::info!("{}", msg);
+                    *success.lock().unwrap() = Some(true);
+                    *message.lock().unwrap() = "Old versions cleaned up successfully".to_string();
+                }
+                Err(e) => {
+                    let msg = format!("Error cleaning up old versions: {}", e);
+                    log_vec.push(msg.clone());
+                    tracing::error!("{}", msg);
+                    *success.lock().unwrap() = Some(false);
+                    *message.lock().unwrap() = msg;
+                }
+            }
+            
+            *logs.lock().unwrap() = log_vec;
+        });
     }
 
     fn handle_search(&mut self) {
@@ -613,6 +844,97 @@ impl BrewstyApp {
             self.search_results.update_package(package);
         }
 
+        if let Some((success, message)) = result.install_completed {
+            self.loading_install = false;
+            self.loading = false;
+            let installed_pkg_name = self.current_install_package.take();
+            if let Some(pkg) = &installed_pkg_name {
+                self.packages_in_operation.remove(pkg);
+            }
+            self.status_message = message;
+            
+            if success {
+                self.tab_manager.mark_unloaded(Tab::Installed);
+                self.load_installed_packages();
+                
+                if let Some(pkg_name) = installed_pkg_name {
+                    if let Some(mut pkg) = self.search_results.get_package(&pkg_name) {
+                        pkg.installed = true;
+                        self.search_results.update_package(pkg);
+                    }
+                }
+            }
+        }
+
+        if let Some((success, message)) = result.uninstall_completed {
+            self.loading_uninstall = false;
+            self.loading = false;
+            if let Some(pkg) = self.current_uninstall_package.take() {
+                self.packages_in_operation.remove(&pkg);
+            }
+            self.status_message = message;
+            
+            if success {
+                self.tab_manager.mark_unloaded(Tab::Installed);
+                self.load_installed_packages();
+            }
+        }
+
+        if let Some((success, message)) = result.update_completed {
+            self.loading_update = false;
+            self.loading = false;
+            if let Some(pkg) = self.current_update_package.take() {
+                self.packages_in_operation.remove(&pkg);
+            }
+            self.status_message = message;
+            
+            if success {
+                self.tab_manager.mark_unloaded(Tab::Installed);
+                self.tab_manager.mark_unloaded(Tab::Outdated);
+                self.load_installed_packages();
+                self.load_outdated_packages();
+            }
+        }
+
+        if let Some((success, message)) = result.update_all_completed {
+            self.loading_update_all = false;
+            self.loading = false;
+            self.status_message = message;
+            
+            if success {
+                self.tab_manager.mark_unloaded(Tab::Installed);
+                self.tab_manager.mark_unloaded(Tab::Outdated);
+                self.load_installed_packages();
+                self.load_outdated_packages();
+            }
+        }
+
+        if let Some((_success, message)) = result.clean_cache_completed {
+            self.loading_clean_cache = false;
+            self.loading = false;
+            self.status_message = message;
+            self.cleanup_modal.close();
+        }
+
+        if let Some((_success, message)) = result.cleanup_old_versions_completed {
+            self.loading_cleanup_old_versions = false;
+            self.loading = false;
+            self.status_message = message;
+            self.cleanup_modal.close();
+        }
+
+        if let Some((package_name, _success, message)) = result.pin_completed {
+            self.packages_in_operation.remove(&package_name);
+            self.status_message = message;
+            self.load_installed_packages();
+        }
+
+        if let Some((package_name, _success, message)) = result.unpin_completed {
+            self.packages_in_operation.remove(&package_name);
+            self.status_message = message;
+            self.load_installed_packages();
+        }
+
         self.log_manager.extend(result.logs);
 
         if self.task_manager.can_load_more_package_info() && self.task_manager.pending_loads_count() > 0 {
@@ -764,7 +1086,6 @@ impl eframe::App for BrewstyApp {
                         let mut pin_action = None;
                         let mut unpin_action = None;
                         let mut load_info_action = None;
-                        let empty_loading_set = std::collections::HashSet::new();
 
                         self.installed_packages.show_filtered_with_search_and_pin(
                             ui,
@@ -775,7 +1096,7 @@ impl eframe::App for BrewstyApp {
                             self.filter_state.show_casks(),
                             self.filter_state.installed_search_query(),
                             &mut load_info_action,
-                            &empty_loading_set,
+                            &self.packages_in_operation,
                             &mut pin_action,
                             &mut unpin_action,
                         );
@@ -829,7 +1150,6 @@ impl eframe::App for BrewstyApp {
                         let mut pin_action = None;
                         let mut unpin_action = None;
                         let mut load_info_action = None;
-                        let empty_loading_set = std::collections::HashSet::new();
 
                         self.outdated_packages.show_filtered_with_search_and_pin(
                             ui,
@@ -840,7 +1160,7 @@ impl eframe::App for BrewstyApp {
                             self.filter_state.show_casks(),
                             "",
                             &mut load_info_action,
-                            &empty_loading_set,
+                            &self.packages_in_operation,
                             &mut pin_action,
                             &mut unpin_action,
                         );
@@ -910,7 +1230,7 @@ impl eframe::App for BrewstyApp {
                             self.filter_state.show_casks(),
                             "",
                             &mut load_info_action,
-                            self.task_manager.get_loading_info(),
+                            &self.packages_in_operation,
                             &mut pin_action,
                             &mut unpin_action,
                         );
