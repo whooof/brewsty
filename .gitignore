@@ -19,3 +19,6 @@ Cargo.lock
 
 # Dev scripts
 .dev/
+
+# Local development
+CLAUDE.md
