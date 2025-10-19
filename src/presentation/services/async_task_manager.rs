@@ -21,6 +21,26 @@ pub enum AsyncTask {
         result: Arc<Mutex<Option<Package>>>,
         started_at: std::time::Instant,
     },
+    Install {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    Uninstall {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    Update {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    UpdateAll {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
 }
 
 pub struct TaskResult {
@@ -30,6 +50,10 @@ pub struct TaskResult {
     pub package_info: Option<(String, Package)>,
     pub logs: Vec<String>,
     pub completed_package_info_loads: Vec<String>,
+    pub install_completed: Option<(bool, String)>,
+    pub uninstall_completed: Option<(bool, String)>,
+    pub update_completed: Option<(bool, String)>,
+    pub update_all_completed: Option<(bool, String)>,
 }
 
 pub struct AsyncTaskManager {
@@ -100,6 +124,10 @@ impl AsyncTaskManager {
             package_info: None,
             logs: Vec::new(),
             completed_package_info_loads: Vec::new(),
+            install_completed: None,
+            uninstall_completed: None,
+            update_completed: None,
+            update_all_completed: None,
         };
 
         let mut tasks_to_keep = Vec::new();
@@ -212,6 +240,94 @@ impl AsyncTaskManager {
                     
                     if should_put_back {
                         self.active_task = Some(AsyncTask::Search { results, logs });
+                    }
+                }
+                AsyncTask::Install { success, logs, message } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.install_completed = Some((succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true
+                    };
+                    
+                    if should_put_back {
+                        self.active_task = Some(AsyncTask::Install { success, logs, message });
+                    }
+                }
+                AsyncTask::Uninstall { success, logs, message } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.uninstall_completed = Some((succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true
+                    };
+                    
+                    if should_put_back {
+                        self.active_task = Some(AsyncTask::Uninstall { success, logs, message });
+                    }
+                }
+                AsyncTask::Update { success, logs, message } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.update_completed = Some((succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true
+                    };
+                    
+                    if should_put_back {
+                        self.active_task = Some(AsyncTask::Update { success, logs, message });
+                    }
+                }
+                AsyncTask::UpdateAll { success, logs, message } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.update_all_completed = Some((succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true
+                    };
+                    
+                    if should_put_back {
+                        self.active_task = Some(AsyncTask::UpdateAll { success, logs, message });
                     }
                 }
                 AsyncTask::LoadPackageInfo { .. } => {
