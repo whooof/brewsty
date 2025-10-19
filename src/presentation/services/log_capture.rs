@@ -7,7 +7,7 @@ static LOG_SENDER: std::sync::OnceLock<Sender<String>> = std::sync::OnceLock::ne
 
 pub fn init_log_capture() -> Receiver<String> {
     let (tx, rx) = channel();
-    LOG_SENDER.set(tx).ok();
+    LOG_SENDER.set(tx).expect("log capture already initialized - init_log_capture() must be called exactly once");
     
     let capture_layer = CaptureLayer {
         sender: LOG_SENDER.get().unwrap().clone(),

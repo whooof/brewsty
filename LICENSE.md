@@ -19,9 +19,10 @@ SOFTWARE.
 
 ---
 
-🌯 Tortilla Clause (Honorware)
+🌯 Tortilla Clause (Honorware, Non-binding)
 
-If this software saved you time, fixed your bug, or just made you go “wow” —  
-please consider donating so I can buy a warm, delicious tortilla wrap 🫓  
-No pressure. Just carbs.  
-[Buy me a wrap](https://paypal.me/JanKonieczny)
+If this software saved you time, or just made you go “wow” —  
+please consider a donation so I can buy a warm, delicious tortilla wrap 🫓😋  
+
+No obligation. Just carbs and happiness.  
+[Make a donation](https://paypal.me/JanKonieczny)

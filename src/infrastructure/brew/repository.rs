@@ -33,7 +33,6 @@ impl BrewPackageRepository {
             PackageType::Cask => "casks",
         };
 
-        // Get the list of pinned packages
         let pinned_packages = self.get_pinned_packages().unwrap_or_default();
 
         if let Some(items) = data.get(items_key).and_then(|v| v.as_array()) {
@@ -71,7 +70,6 @@ impl BrewPackageRepository {
             PackageType::Cask => "casks",
         };
 
-        // Get the list of pinned packages
         let pinned_packages = self.get_pinned_packages().unwrap_or_default();
 
         if let Some(items) = data.get(items_key).and_then(|v| v.as_array()) {
@@ -163,6 +161,15 @@ impl BrewPackageRepository {
         }
         Ok(total)
     }
+
+    async fn log_brew_output(output: &crate::infrastructure::brew::command::BrewOutput) {
+        if !output.stdout.is_empty() {
+            tracing::info!("brew output: {}", output.stdout);
+        }
+        if !output.stderr.is_empty() {
+            tracing::info!("brew stderr: {}", output.stderr);
+        }
+    }
 }
 
 #[async_trait]
@@ -199,12 +206,7 @@ impl PackageRepository for BrewPackageRepository {
         })
         .await??;
 
-        if !output.stdout.is_empty() {
-            tracing::info!("brew output: {}", output.stdout);
-        }
-        if !output.stderr.is_empty() {
-            tracing::info!("brew stderr: {}", output.stderr);
-        }
+        Self::log_brew_output(&output).await;
 
         Ok(())
     }
@@ -219,12 +221,7 @@ impl PackageRepository for BrewPackageRepository {
         })
         .await??;
 
-        if !output.stdout.is_empty() {
-            tracing::info!("brew output: {}", output.stdout);
-        }
-        if !output.stderr.is_empty() {
-            tracing::info!("brew stderr: {}", output.stderr);
-        }
+        Self::log_brew_output(&output).await;
 
         Ok(())
     }
@@ -234,12 +231,7 @@ impl PackageRepository for BrewPackageRepository {
 
         let output = tokio::task::spawn_blocking(move || BrewCommand::upgrade_package(&name)).await??;
 
-        if !output.stdout.is_empty() {
-            tracing::info!("brew output: {}", output.stdout);
-        }
-        if !output.stderr.is_empty() {
-            tracing::info!("brew stderr: {}", output.stderr);
-        }
+        Self::log_brew_output(&output).await;
 
         Ok(())
     }
@@ -247,12 +239,7 @@ impl PackageRepository for BrewPackageRepository {
     async fn update_all(&self) -> Result<()> {
         let output = tokio::task::spawn_blocking(|| BrewCommand::upgrade_all()).await??;
 
-        if !output.stdout.is_empty() {
-            tracing::info!("brew output: {}", output.stdout);
-        }
-        if !output.stderr.is_empty() {
-            tracing::info!("brew stderr: {}", output.stderr);
-        }
+        Self::log_brew_output(&output).await;
 
         Ok(())
     }
@@ -270,12 +257,7 @@ impl PackageRepository for BrewPackageRepository {
     async fn clean_cache(&self) -> Result<()> {
         let output = tokio::task::spawn_blocking(|| BrewCommand::cleanup()).await??;
 
-        if !output.stdout.is_empty() {
-            tracing::info!("brew output: {}", output.stdout);
-        }
-        if !output.stderr.is_empty() {
-            tracing::info!("brew stderr: {}", output.stderr);
-        }
+        Self::log_brew_output(&output).await;
 
         Ok(())
     }
@@ -283,12 +265,7 @@ impl PackageRepository for BrewPackageRepository {
     async fn cleanup_old_versions(&self) -> Result<()> {
         let output = tokio::task::spawn_blocking(|| BrewCommand::cleanup_old_versions()).await??;
 
-        if !output.stdout.is_empty() {
-            tracing::info!("brew output: {}", output.stdout);
-        }
-        if !output.stderr.is_empty() {
-            tracing::info!("brew stderr: {}", output.stderr);
-        }
+        Self::log_brew_output(&output).await;
 
         Ok(())
     }
@@ -384,12 +361,7 @@ impl PackageRepository for BrewPackageRepository {
         let name = package.name.clone();
         let output = tokio::task::spawn_blocking(move || BrewCommand::pin_package(&name)).await??;
 
-        if !output.stdout.is_empty() {
-            tracing::info!("brew output: {}", output.stdout);
-        }
-        if !output.stderr.is_empty() {
-            tracing::info!("brew stderr: {}", output.stderr);
-        }
+        Self::log_brew_output(&output).await;
 
         Ok(())
     }
@@ -398,12 +370,7 @@ impl PackageRepository for BrewPackageRepository {
          let name = package.name.clone();
          let output = tokio::task::spawn_blocking(move || BrewCommand::unpin_package(&name)).await??;
  
-         if !output.stdout.is_empty() {
-             tracing::info!("brew output: {}", output.stdout);
-         }
-         if !output.stderr.is_empty() {
-             tracing::info!("brew stderr: {}", output.stderr);
-         }
+         Self::log_brew_output(&output).await;
  
          Ok(())
      }
