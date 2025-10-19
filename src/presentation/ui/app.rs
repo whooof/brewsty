@@ -1,7 +1,7 @@
 use crate::application::UseCaseContainer;
 use crate::domain::entities::{Package, PackageType};
 use crate::presentation::components::{
-    CleanupAction, CleanupModal, CleanupType, FilterState, InfoModal, LogManager, PackageList, Tab,
+    CleanupAction, CleanupModal, CleanupType, FilterState, InfoModal, LogLevel, LogManager, PackageList, Tab,
     TabManager,
 };
 use crate::presentation::services::{AsyncExecutor, AsyncTask, AsyncTaskManager};
@@ -1128,22 +1128,17 @@ impl eframe::App for BrewstyApp {
                     .stick_to_bottom(true)
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
-                        ui.visuals_mut().override_text_color = Some(egui::Color32::from_rgb(0, 255, 0));
-                        let bg_frame = egui::Frame::default()
-                            .fill(egui::Color32::BLACK)
-                            .inner_margin(8.0);
-                        bg_frame.show(ui, |ui| {
-                            for entry in self.log_manager.all_logs_reversed() {
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        egui::RichText::new(format!("[{}]", entry.format_timestamp()))
-                                            .color(egui::Color32::GRAY)
-                                            .monospace(),
-                                    );
-                                    ui.monospace(&entry.message);
-                                });
-                            }
-                        });
+
+                        for entry in self.log_manager.filtered_logs() {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(format!("[{}]", entry.format_timestamp()))
+                                        .color(egui::Color32::GRAY)
+                                        .monospace(),
+                                );
+                                ui.monospace(&entry.message);
+                            });
+                        }
                     });
 
                 self.output_panel_height = ui.min_rect().height();
@@ -1357,6 +1352,32 @@ impl eframe::App for BrewstyApp {
                     ui.heading("Settings & Maintenance");
                     ui.separator();
 
+                    ui.group(|ui| {
+                        ui.heading("Log Levels");
+                        ui.horizontal(|ui| {
+                            let mut debug = self.log_manager.is_level_visible(LogLevel::Debug);
+                            let mut info = self.log_manager.is_level_visible(LogLevel::Info);
+                            let mut warn = self.log_manager.is_level_visible(LogLevel::Warn);
+                            let mut error = self.log_manager.is_level_visible(LogLevel::Error);
+
+                            if ui.checkbox(&mut debug, "Debug").changed() {
+                                self.log_manager.set_level_visible(LogLevel::Debug, debug);
+                            }
+                            if ui.checkbox(&mut info, "Info").changed() {
+                                self.log_manager.set_level_visible(LogLevel::Info, info);
+                            }
+                            if ui.checkbox(&mut warn, "Warn").changed() {
+                                self.log_manager.set_level_visible(LogLevel::Warn, warn);
+                            }
+                            if ui.checkbox(&mut error, "Error").changed() {
+                                self.log_manager.set_level_visible(LogLevel::Error, error);
+                            }
+                        });
+                    });
+
+                    ui.separator();
+                    ui.heading("Maintenance");
+
                     ui.vertical_centered(|ui| {
                         if ui.button("Clean Cache").clicked() {
                             self.show_cleanup_preview(CleanupType::Cache);
@@ -1402,26 +1423,32 @@ impl eframe::App for BrewstyApp {
                         .auto_shrink([false; 2])
                         .stick_to_bottom(true)
                         .show(ui, |ui| {
-                            ui.set_width(ui.available_width());
-                            ui.set_style({
-                                let mut style = (*ui.ctx().style()).clone();
-                                style.override_font_id = Some(egui::FontId::monospace(12.0));
-                                style
-                            });
-
-                            for entry in self.log_manager.all_logs() {
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        egui::RichText::new(format!(
-                                            "[{}]",
-                                            entry.format_timestamp()
-                                        ))
-                                        .color(egui::Color32::GRAY)
-                                        .monospace(),
-                                    );
-                                    ui.monospace(&entry.message);
+                            ui.visuals_mut().override_text_color = Some(egui::Color32::from_rgb(0, 255, 0));
+                            let bg_frame = egui::Frame::default()
+                                .fill(egui::Color32::BLACK)
+                                .inner_margin(8.0);
+                            bg_frame.show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                ui.set_style({
+                                    let mut style = (*ui.ctx().style()).clone();
+                                    style.override_font_id = Some(egui::FontId::monospace(12.0));
+                                    style
                                 });
-                            }
+
+                                for entry in self.log_manager.filtered_logs_reversed() {
+                                    ui.horizontal(|ui| {
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "[{}]",
+                                                entry.format_timestamp()
+                                            ))
+                                            .color(egui::Color32::GRAY)
+                                            .monospace(),
+                                        );
+                                        ui.monospace(&entry.message);
+                                    });
+                                }
+                            });
                         });
                 }
             }
