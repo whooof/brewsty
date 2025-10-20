@@ -78,7 +78,7 @@ src/
 ## Installation
 
 ```bash
-git clone https://github.com/yourusername/brewsty.git
+git clone https://github.com/whooof/brewsty.git
 cd brewsty
 cargo build --release
 ```
