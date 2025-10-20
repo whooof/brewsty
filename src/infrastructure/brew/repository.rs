@@ -165,10 +165,7 @@ impl BrewPackageRepository {
                 continue;
             }
 
-            if let Some(path_str) = trimmed
-                .strip_prefix("Would remove: ")
-                .or_else(|| Some(trimmed))
-            {
+            if let Some(path_str) = trimmed.strip_prefix("Would remove: ") {
                 let path = Path::new(path_str);
                 let size = if path.exists() {
                     if path.is_file() {
