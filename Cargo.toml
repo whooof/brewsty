@@ -1,6 +1,6 @@
 [package]
 name = "brewsty"
-version = "0.3.0-beta"
+version = "0.4.0-beta"
 edition = "2024"
 
 [dependencies]
@@ -20,3 +20,6 @@ tracing-subscriber = "0.3"
 opt-level = 3
 lto = true
 codegen-units = 1
+
+[profile.release.package."*"]
+opt-level = 3

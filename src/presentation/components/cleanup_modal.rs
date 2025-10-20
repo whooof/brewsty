@@ -50,11 +50,17 @@ impl CleanupModal {
             .resizable(true)
             .show(ctx, |ui| {
                 if let Some(preview) = &self.preview {
-                    ui.heading(format!("Total size to free: {}", format_size(preview.total_size)));
+                    ui.heading(format!(
+                        "Total size to free: {}",
+                        format_size(preview.total_size)
+                    ));
                     ui.separator();
 
-                    ui.label(format!("Files and folders to be removed ({} items):", preview.items.len()));
-                    
+                    ui.label(format!(
+                        "Files and folders to be removed ({} items):",
+                        preview.items.len()
+                    ));
+
                     egui::ScrollArea::vertical()
                         .max_height(300.0)
                         .show(ui, |ui| {
