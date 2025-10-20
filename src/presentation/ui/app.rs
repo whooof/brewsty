@@ -5,6 +5,7 @@ use crate::presentation::components::{
     PackageList, Tab, TabManager,
 };
 use crate::presentation::services::{AsyncExecutor, AsyncTask, AsyncTaskManager};
+use anyhow::Result;
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -225,7 +226,7 @@ impl BrewstyApp {
         });
 
         thread::spawn(move || {
-            if let Err(e) = (|| -> anyhow::Result<()> {
+            if let Err(e) = (|| -> Result<()> {
                 let rt = tokio::runtime::Runtime::new()?;
 
                 tracing::debug!("Starting to load outdated packages");
