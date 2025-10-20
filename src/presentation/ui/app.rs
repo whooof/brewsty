@@ -225,7 +225,7 @@ impl BrewstyApp {
         });
 
         thread::spawn(move || {
-            if let Err(e) = (|| {
+            if let Err(e) = (|| -> anyhow::Result<()> {
                 let rt = tokio::runtime::Runtime::new()?;
 
                 tracing::debug!("Starting to load outdated packages");
@@ -305,7 +305,7 @@ impl BrewstyApp {
                     .map_err(|e| anyhow::anyhow!("Failed to lock logs: {}", e))? = logs;
                 tracing::debug!("Successfully updated outdated mutexes");
 
-                anyhow::Ok(())
+                Ok(())
             })() {
                 tracing::error!("Error in load_outdated_packages thread: {}", e);
                 if let Ok(mut logs) = output_log.lock() {
