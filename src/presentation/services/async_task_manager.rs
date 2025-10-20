@@ -2,6 +2,13 @@ use crate::domain::entities::{Package, PackageType};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TaskKind {
+    LoadInstalled,
+    LoadOutdated,
+    Search,
+}
+
 pub enum AsyncTask {
     LoadInstalled {
         packages: Arc<Mutex<Vec<Package>>>,
@@ -100,30 +107,18 @@ impl AsyncTaskManager {
     }
 
     pub fn set_active_task(&mut self, task: AsyncTask) {
-        let task_type = match &task {
-            AsyncTask::LoadInstalled { .. } => "LoadInstalled",
-            AsyncTask::LoadOutdated { .. } => "LoadOutdated",
-            AsyncTask::Search { .. } => "Search",
-            _ => "",
-        };
-
-        if !task_type.is_empty() && self.has_task_type(task_type) {
-            tracing::warn!("{} task is already running, ignoring duplicate", task_type);
-            return;
+        if let Some(kind) = task.kind() {
+            if self.has_task_kind(kind) {
+                tracing::warn!("{:?} task is already running, ignoring duplicate", kind);
+                return;
+            }
         }
 
         self.active_tasks.push(task);
     }
 
-    pub fn has_task_type(&self, task_type: &str) -> bool {
-        self.active_tasks
-            .iter()
-            .any(|task| match (task, task_type) {
-                (AsyncTask::LoadInstalled { .. }, "LoadInstalled") => true,
-                (AsyncTask::LoadOutdated { .. }, "LoadOutdated") => true,
-                (AsyncTask::Search { .. }, "Search") => true,
-                _ => false,
-            })
+    pub fn has_task_kind(&self, kind: TaskKind) -> bool {
+        self.active_tasks.iter().any(|task| task.kind() == Some(kind))
     }
 
     pub fn add_package_info_task(&mut self, package_name: String, task: AsyncTask) {
@@ -577,5 +572,16 @@ impl AsyncTaskManager {
         self.active_tasks = active_tasks_to_keep;
 
         result
+    }
+}
+
+impl AsyncTask {
+    pub fn kind(&self) -> Option<TaskKind> {
+        match self {
+            AsyncTask::LoadInstalled { .. } => Some(TaskKind::LoadInstalled),
+            AsyncTask::LoadOutdated { .. } => Some(TaskKind::LoadOutdated),
+            AsyncTask::Search { .. } => Some(TaskKind::Search),
+            _ => None,
+        }
     }
 }
