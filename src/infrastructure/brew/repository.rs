@@ -110,10 +110,10 @@ impl BrewPackageRepository {
         tracing::debug!("Output length: {} bytes", output.len());
 
         let mut packages = Vec::new();
-        let line_count = output.lines().count();
-        tracing::debug!("Processing {} lines", line_count);
+        let mut line_count = 0;
 
         for line in output.lines() {
+            line_count += 1;
             let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue;
@@ -134,7 +134,7 @@ impl BrewPackageRepository {
             }
         }
 
-        tracing::debug!("Parsed {} packages for {:?}", packages.len(), package_type);
+        tracing::debug!("Processing {} lines, parsed {} packages for {:?}", line_count, packages.len(), package_type);
         Ok(packages)
     }
 
