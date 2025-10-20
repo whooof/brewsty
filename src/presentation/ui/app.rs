@@ -1467,7 +1467,6 @@ impl eframe::App for BrewstyApp {
 
                     egui::ScrollArea::vertical()
                         .auto_shrink([false; 2])
-                        .stick_to_bottom(true)
                         .show(ui, |ui| {
                             ui.visuals_mut().override_text_color =
                                 Some(egui::Color32::from_rgb(0, 255, 0));
