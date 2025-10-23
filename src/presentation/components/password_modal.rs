@@ -91,9 +91,7 @@ impl PasswordModal {
                     }
 
                     ui.horizontal(|ui| {
-                        if ui.checkbox(&mut self.show_password, "Show password") {
-                            // Toggle visibility
-                        }
+                        ui.checkbox(&mut self.show_password, "Show password");
                     });
 
                     ui.add_space(12.0);
