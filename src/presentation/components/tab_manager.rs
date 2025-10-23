@@ -3,7 +3,6 @@ use std::collections::HashMap;
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub enum Tab {
     Installed,
-    Outdated,
     SearchInstall,
     Settings,
     Log,
@@ -28,7 +27,6 @@ impl TabManager {
     pub fn new() -> Self {
         let mut tab_states = HashMap::new();
         tab_states.insert(Tab::Installed, TabState::new());
-        tab_states.insert(Tab::Outdated, TabState::new());
         tab_states.insert(Tab::SearchInstall, TabState::new());
         tab_states.insert(Tab::Settings, TabState::new());
         tab_states.insert(Tab::Log, TabState::new());

@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-const MAX_LOG_SIZE: usize = 200;
+const MAX_LOG_SIZE: usize = 1000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LogLevel {

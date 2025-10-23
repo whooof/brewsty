@@ -22,4 +22,6 @@ Cargo.lock
 
 # Local development
 CLAUDE.md
-.dev/
+
+# Session documentation
+.sessions/

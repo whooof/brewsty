@@ -16,11 +16,15 @@ pub fn init_log_capture() -> Receiver<String> {
         sender: LOG_SENDER.get().unwrap().clone(),
     };
 
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "verbose-logging")]
     let filter = LevelFilter::TRACE;
 
-    #[cfg(not(debug_assertions))]
-    let filter = LevelFilter::DEBUG;
+    #[cfg(not(feature = "verbose-logging"))]
+    let filter = if cfg!(debug_assertions) {
+        LevelFilter::DEBUG
+    } else {
+        LevelFilter::INFO
+    };
 
     tracing_subscriber::registry()
         .with(filter)
