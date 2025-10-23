@@ -2,7 +2,7 @@ use crate::application::UseCaseContainer;
 use crate::domain::entities::{Package, PackageType};
 use crate::presentation::components::{
     CleanupAction, CleanupModal, CleanupType, FilterState, InfoModal, LogLevel, LogManager,
-    MergedPackageList, PackageList, SelectionState, Tab, TabManager,
+    MergedPackageList, PackageList, PasswordModal, SelectionState, Tab, TabManager,
 };
 use crate::presentation::services::{AsyncExecutor, AsyncTask, AsyncTaskManager};
 use anyhow::Result;
@@ -15,6 +15,7 @@ pub struct BrewstyApp {
     filter_state: FilterState,
     cleanup_modal: CleanupModal,
     info_modal: InfoModal,
+    password_modal: PasswordModal,
     log_manager: LogManager,
     log_rx: Receiver<String>,
 
@@ -40,6 +41,8 @@ pub struct BrewstyApp {
     current_uninstall_package: Option<String>,
     current_update_package: Option<String>,
     current_update_selected_packages: Option<Vec<String>>,
+    pending_updates: Vec<Package>,
+    pending_operation: Option<PendingOperation>,
     packages_in_operation: std::collections::HashSet<String>,
 
     task_manager: AsyncTaskManager,
@@ -52,6 +55,12 @@ pub struct BrewstyApp {
     output_panel_height: f32,
 }
 
+#[derive(Clone, Debug)]
+enum PendingOperation {
+    Install(Package),
+    Uninstall(Package),
+}
+
 impl BrewstyApp {
     pub fn new(use_cases: Arc<UseCaseContainer>, log_rx: Receiver<String>) -> Self {
         let executor = AsyncExecutor::new();
@@ -61,6 +70,7 @@ impl BrewstyApp {
             filter_state: FilterState::new(),
             cleanup_modal: CleanupModal::new(),
             info_modal: InfoModal::new(),
+            password_modal: PasswordModal::new(),
             log_manager: LogManager::new(),
             log_rx,
             merged_packages: MergedPackageList::new(),
@@ -80,6 +90,8 @@ impl BrewstyApp {
             current_uninstall_package: None,
             current_update_package: None,
             current_update_selected_packages: None,
+            pending_updates: Vec::new(),
+            pending_operation: None,
             packages_in_operation: std::collections::HashSet::new(),
             task_manager: AsyncTaskManager::new(),
             use_cases,
@@ -296,76 +308,93 @@ impl BrewstyApp {
             return;
         }
 
-        self.loading_update_all = true;
-        let count = package_names.len();
-        self.status_message = format!("Updating {} selected packages...", count);
-        self.log_manager
-            .push(format!("Updating {} selected packages", count));
-        tracing::info!("Updating {} selected packages", count);
-
-        let update_use_case = Arc::clone(&self.use_cases.update);
         let mut packages_to_update = Vec::new();
 
         for package_name in package_names {
             if let Some(package) = self.merged_packages.get_package(&package_name) {
                 packages_to_update.push(package);
+                self.packages_in_operation.insert(package_name);
             }
         }
 
-        let packages_in_operation = Arc::new(Mutex::new(std::collections::HashSet::new()));
-        let output_log = Arc::new(Mutex::new(Vec::new()));
-        let success = Arc::new(Mutex::new(None));
-        let message = Arc::new(Mutex::new(String::new()));
-
-        for package in &packages_to_update {
-            self.packages_in_operation.insert(package.name.clone());
-            if let Ok(mut ops) = packages_in_operation.lock() {
-                ops.insert(package.name.clone());
-            }
+        if packages_to_update.is_empty() {
+            return;
         }
 
-        self.task_manager.set_active_task(AsyncTask::UpdateAll {
-            success: Arc::clone(&success),
-            logs: Arc::clone(&output_log),
-            message: Arc::clone(&message),
-        });
+        let count = packages_to_update.len();
+        self.status_message = format!("Queued {} packages for sequential update", count);
+        self.log_manager
+            .push(format!("Queued {} packages for sequential update", count));
+        tracing::info!("Queued {} packages for sequential update", count);
 
-        thread::spawn(move || {
-            if let Err(e) = (|| -> Result<()> {
-                let rt = tokio::runtime::Runtime::new()?;
+        // Queue all packages for sequential update
+        self.pending_updates = packages_to_update;
+        self.loading_update_all = true;
 
-                for package in packages_to_update {
-                    match rt.block_on(update_use_case.execute(&package)) {
-                        Ok(_) => {
-                            let msg = format!("Successfully updated {}", package.name);
-                            if let Ok(mut logs) = output_log.lock() {
-                                logs.push(msg.clone());
-                            }
-                            tracing::info!("{}", msg);
-                        }
-                        Err(e) => {
-                            let msg = format!("Error updating {}: {}", package.name, e);
-                            if let Ok(mut logs) = output_log.lock() {
-                                logs.push(msg.clone());
-                            }
-                            tracing::error!("{}", msg);
-                        }
-                    }
+        // Start updating the first package
+        self.process_next_pending_update();
+    }
+
+    fn process_next_pending_update(&mut self) {
+        if self.pending_updates.is_empty() {
+            return;
+        }
+
+        let package = self.pending_updates.remove(0);
+        let remaining = self.pending_updates.len();
+        let total = self.packages_in_operation.len();
+        let completed = total - remaining;
+
+        self.status_message = format!(
+            "Updating {}/{}: {}... ({} remaining)",
+            completed, total, package.name, remaining
+        );
+
+        let msg = format!(
+            "Updating {}/{}: {} ({} remaining)",
+            completed, total, package.name, remaining
+        );
+        self.log_manager.push(msg);
+        tracing::info!(
+            "Processing package {}/{}: {}",
+            completed,
+            total,
+            package.name
+        );
+
+        self.handle_update(package);
+    }
+
+    fn check_and_handle_password_error(&mut self, error_msg: &str, operation: PendingOperation) {
+        // Check if the error indicates a password is needed
+        if error_msg.contains("authentication failure")
+            || error_msg.contains("sudo")
+            || error_msg.contains("password")
+            || error_msg.contains("Permission denied")
+        {
+            self.pending_operation = Some(operation);
+            let op_name = match &operation {
+                PendingOperation::Install(_) => "Install".to_string(),
+                PendingOperation::Uninstall(_) => "Uninstall".to_string(),
+            };
+            self.password_modal.show(op_name);
+            self.log_manager
+                .push("Password required. Please enter your administrator password.".to_string());
+            tracing::info!("Password required for operation");
+        }
+    }
+
+    fn retry_with_password(&mut self, password: &str) {
+        if let Some(operation) = self.pending_operation.take() {
+            match operation {
+                PendingOperation::Install(package) => {
+                    self.handle_install_with_password(package, password.to_string());
                 }
-
-                if let Ok(mut logs) = output_log.lock() {
-                    logs.push("Finished updating selected packages".to_string());
-                }
-                tracing::info!("Finished updating selected packages");
-
-                Ok(())
-            })() {
-                tracing::error!("Error in handle_update_selected thread: {}", e);
-                if let Ok(mut logs) = output_log.lock() {
-                    logs.push(format!("Thread error: {}", e));
+                PendingOperation::Uninstall(package) => {
+                    self.handle_uninstall_with_password(package, password.to_string());
                 }
             }
-        });
+        }
     }
 
     fn handle_install(&mut self, package: Package) {
@@ -411,11 +440,70 @@ impl BrewstyApp {
                     *message.lock().unwrap() = format!("{} installed successfully", package_name);
                 }
                 Err(e) => {
-                    let msg = format!("Error installing {}: {}", package_name, e);
+                    let error_str = e.to_string();
+                    let msg = format!("Error installing {}: {}", package_name, error_str);
                     log_vec.push(msg.clone());
                     tracing::error!("{}", msg);
                     *success.lock().unwrap() = Some(false);
-                    *message.lock().unwrap() = msg;
+                    *message.lock().unwrap() = error_str;
+                }
+            }
+
+            *logs.lock().unwrap() = log_vec;
+        });
+    }
+
+    fn handle_install_with_password(&mut self, package: Package, password: String) {
+        if self.loading_install {
+            return;
+        }
+
+        let package_name = package.name.clone();
+        self.loading_install = true;
+        self.loading = true;
+        self.current_install_package = Some(package_name.clone());
+        self.status_message = format!("Installing {} (with password)...", package.name);
+
+        let package_type = package.package_type.clone();
+        let initial_msg = format!(
+            "Retrying install with password: {} ({:?})",
+            package_name, package_type
+        );
+        self.log_manager.push(initial_msg.clone());
+        tracing::info!("{}", initial_msg);
+
+        let success = Arc::new(Mutex::new(None));
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let message = Arc::new(Mutex::new(String::new()));
+
+        self.task_manager.set_active_task(AsyncTask::Install {
+            success: Arc::clone(&success),
+            logs: Arc::clone(&logs),
+            message: Arc::clone(&message),
+        });
+
+        let name = package_name.clone();
+        let pkg_type = package_type.clone();
+
+        thread::spawn(move || {
+            use crate::infrastructure::brew::command::BrewCommand;
+
+            let mut log_vec = Vec::new();
+            match BrewCommand::install_package_with_password(&name, pkg_type, &password) {
+                Ok(_) => {
+                    let msg = format!("Successfully installed {}", package_name);
+                    log_vec.push(msg.clone());
+                    tracing::info!("{}", msg);
+                    *success.lock().unwrap() = Some(true);
+                    *message.lock().unwrap() = format!("{} installed successfully", package_name);
+                }
+                Err(e) => {
+                    let error_str = e.to_string();
+                    let msg = format!("Error installing {}: {}", package_name, error_str);
+                    log_vec.push(msg.clone());
+                    tracing::error!("{}", msg);
+                    *success.lock().unwrap() = Some(false);
+                    *message.lock().unwrap() = error_str;
                 }
             }
 
@@ -469,11 +557,70 @@ impl BrewstyApp {
                     *message.lock().unwrap() = format!("{} uninstalled successfully", package_name);
                 }
                 Err(e) => {
-                    let msg = format!("Error uninstalling {}: {}", package_name, e);
+                    let error_str = e.to_string();
+                    let msg = format!("Error uninstalling {}: {}", package_name, error_str);
                     log_vec.push(msg.clone());
                     tracing::error!("{}", msg);
                     *success.lock().unwrap() = Some(false);
-                    *message.lock().unwrap() = msg;
+                    *message.lock().unwrap() = error_str;
+                }
+            }
+
+            *logs.lock().unwrap() = log_vec;
+        });
+    }
+
+    fn handle_uninstall_with_password(&mut self, package: Package, password: String) {
+        if self.loading_uninstall {
+            return;
+        }
+
+        let package_name = package.name.clone();
+        self.loading_uninstall = true;
+        self.loading = true;
+        self.current_uninstall_package = Some(package_name.clone());
+        self.status_message = format!("Uninstalling {} (with password)...", package.name);
+
+        let package_type = package.package_type.clone();
+        let initial_msg = format!(
+            "Retrying uninstall with password: {} ({:?})",
+            package_name, package_type
+        );
+        self.log_manager.push(initial_msg.clone());
+        tracing::info!("{}", initial_msg);
+
+        let success = Arc::new(Mutex::new(None));
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let message = Arc::new(Mutex::new(String::new()));
+
+        self.task_manager.set_active_task(AsyncTask::Uninstall {
+            success: Arc::clone(&success),
+            logs: Arc::clone(&logs),
+            message: Arc::clone(&message),
+        });
+
+        let name = package_name.clone();
+        let pkg_type = package_type.clone();
+
+        thread::spawn(move || {
+            use crate::infrastructure::brew::command::BrewCommand;
+
+            let mut log_vec = Vec::new();
+            match BrewCommand::uninstall_package_with_password(&name, pkg_type, &password) {
+                Ok(_) => {
+                    let msg = format!("Successfully uninstalled {}", package_name);
+                    log_vec.push(msg.clone());
+                    tracing::info!("{}", msg);
+                    *success.lock().unwrap() = Some(true);
+                    *message.lock().unwrap() = format!("{} uninstalled successfully", package_name);
+                }
+                Err(e) => {
+                    let error_str = e.to_string();
+                    let msg = format!("Error uninstalling {}: {}", package_name, error_str);
+                    log_vec.push(msg.clone());
+                    tracing::error!("{}", msg);
+                    *success.lock().unwrap() = Some(false);
+                    *message.lock().unwrap() = error_str;
                 }
             }
 
@@ -1037,7 +1184,7 @@ impl BrewstyApp {
             if let Some(ref pkg_name) = pkg {
                 self.packages_in_operation.remove(pkg_name);
             }
-            self.status_message = message;
+            self.status_message = message.clone();
 
             if success {
                 if let Some(pkg_name) = pkg {
@@ -1046,6 +1193,20 @@ impl BrewstyApp {
                     self.merged_packages
                         .remove_from_outdated_selection_by_name(&pkg_name);
                 }
+            }
+
+            // If we're in the middle of updating selected packages, process the next one
+            if self.loading_update_all && !self.pending_updates.is_empty() {
+                self.process_next_pending_update();
+                self.loading_update = true;
+            } else if self.loading_update_all && self.pending_updates.is_empty() {
+                // All updates are done
+                self.loading_update_all = false;
+                self.status_message = "Finished updating all packages".to_string();
+                self.log_manager
+                    .push("Finished updating all packages".to_string());
+                tracing::info!("Finished updating all packages");
+                self.merged_packages.clear_outdated_selection();
             }
         }
 
@@ -1512,6 +1673,18 @@ impl eframe::App for BrewstyApp {
             }
 
             self.info_modal.render(ctx);
+
+            self.password_modal.render(ctx);
+            if let Some((confirmed, password)) = self.password_modal.take_result() {
+                if confirmed && !password.is_empty() {
+                    self.retry_with_password(&password);
+                } else {
+                    self.pending_operation = None;
+                    self.log_manager
+                        .push("Password entry cancelled.".to_string());
+                    tracing::info!("Password entry cancelled");
+                }
+            }
         });
     }
 }

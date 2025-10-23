@@ -1,6 +1,7 @@
 use crate::domain::entities::PackageType;
 use anyhow::{Result, anyhow};
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 pub struct BrewOutput {
     pub stdout: String,
@@ -33,6 +34,32 @@ impl BrewCommand {
     fn execute_brew_with_output(args: &[&str]) -> Result<BrewOutput> {
         let output = Command::new("brew").args(args).output()?;
 
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+
+        if !output.status.success() {
+            return Err(anyhow!("Brew command failed: {}", stderr));
+        }
+
+        Ok(BrewOutput { stdout, stderr })
+    }
+
+    fn execute_brew_with_password(args: &[&str], password: &str) -> Result<BrewOutput> {
+        let mut child = Command::new("brew")
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        {
+            if let Some(mut stdin) = child.stdin.take() {
+                // Write password followed by newline
+                write!(stdin, "{}\n", password)?;
+            }
+        }
+
+        let output = child.wait_with_output()?;
         let stdout = String::from_utf8(output.stdout)?;
         let stderr = String::from_utf8(output.stderr)?;
 
@@ -88,9 +115,27 @@ impl BrewCommand {
         Self::execute_brew_with_output(&["install", type_arg, name])
     }
 
+    pub fn install_package_with_password(
+        name: &str,
+        package_type: PackageType,
+        password: &str,
+    ) -> Result<BrewOutput> {
+        let type_arg = Self::get_package_type_arg(package_type);
+        Self::execute_brew_with_password(&["install", type_arg, name], password)
+    }
+
     pub fn uninstall_package(name: &str, package_type: PackageType) -> Result<BrewOutput> {
         let type_arg = Self::get_package_type_arg(package_type);
         Self::execute_brew_with_output(&["uninstall", type_arg, name])
+    }
+
+    pub fn uninstall_package_with_password(
+        name: &str,
+        package_type: PackageType,
+        password: &str,
+    ) -> Result<BrewOutput> {
+        let type_arg = Self::get_package_type_arg(package_type);
+        Self::execute_brew_with_password(&["uninstall", type_arg, name], password)
     }
 
     pub fn upgrade_package(name: &str) -> Result<BrewOutput> {
