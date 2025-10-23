@@ -59,7 +59,7 @@ impl MergedPackageList {
         {
             let mut package = self.outdated_packages.remove(pos);
             // Update version and clear available_version since it's now current
-            package.version = Some(new_version);
+            package.version = Some(new_version.clone());
             package.available_version = None;
             // Add to installed packages
             if !self.packages.iter().any(|p| p.name == package.name) {
@@ -70,6 +70,10 @@ impl MergedPackageList {
                 existing.available_version = None;
             }
         }
+    }
+
+    pub fn remove_from_outdated(&mut self, package_name: &str) {
+        self.outdated_packages.retain(|p| p.name != package_name);
     }
 
     pub fn remove_from_outdated_selection_by_name(&mut self, package_name: &str) {
