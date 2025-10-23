@@ -1002,6 +1002,7 @@ impl BrewstyApp {
 
             if success {
                 self.tab_manager.mark_unloaded(Tab::Installed);
+                self.tab_manager.switch_to(Tab::Installed);
                 self.load_installed_packages();
 
                 if let Some(pkg_name) = installed_pkg_name {
@@ -1023,6 +1024,7 @@ impl BrewstyApp {
 
             if success {
                 self.tab_manager.mark_unloaded(Tab::Installed);
+                self.tab_manager.switch_to(Tab::Installed);
                 self.load_installed_packages();
             }
         }
@@ -1037,6 +1039,7 @@ impl BrewstyApp {
 
             if success {
                 self.tab_manager.mark_unloaded(Tab::Installed);
+                self.tab_manager.switch_to(Tab::Installed);
                 self.load_installed_packages();
             }
         }
@@ -1049,6 +1052,7 @@ impl BrewstyApp {
 
             if success {
                 self.tab_manager.mark_unloaded(Tab::Installed);
+                self.tab_manager.switch_to(Tab::Installed);
                 self.load_installed_packages();
             }
         }
