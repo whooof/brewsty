@@ -3,6 +3,10 @@ name = "brewsty"
 version = "0.4.0-beta"
 edition = "2024"
 
+[features]
+default = []
+verbose-logging = []
+
 [dependencies]
 eframe = "0.29"
 egui = "0.29"
