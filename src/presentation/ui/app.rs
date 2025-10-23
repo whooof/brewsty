@@ -2,10 +2,9 @@ use crate::application::UseCaseContainer;
 use crate::domain::entities::{Package, PackageType};
 use crate::presentation::components::{
     CleanupAction, CleanupModal, CleanupType, FilterState, InfoModal, LogLevel, LogManager,
-    MergedPackageList, PackageList, PasswordModal, SelectionState, Tab, TabManager,
+    MergedPackageList, PackageList, PasswordModal, Tab, TabManager,
 };
 use crate::presentation::services::{AsyncExecutor, AsyncTask, AsyncTaskManager};
-use anyhow::Result;
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -372,11 +371,11 @@ impl BrewstyApp {
             || error_msg.contains("password")
             || error_msg.contains("Permission denied")
         {
-            self.pending_operation = Some(operation);
             let op_name = match &operation {
                 PendingOperation::Install(_) => "Install".to_string(),
                 PendingOperation::Uninstall(_) => "Uninstall".to_string(),
             };
+            self.pending_operation = Some(operation);
             self.password_modal.show(op_name);
             self.log_manager
                 .push("Password required. Please enter your administrator password.".to_string());

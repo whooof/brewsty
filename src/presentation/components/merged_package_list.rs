@@ -126,7 +126,7 @@ impl MergedPackageList {
     pub fn show_merged_with_search_and_pin(
         &mut self,
         ui: &mut egui::Ui,
-        on_install: &mut Option<Package>,
+        _on_install: &mut Option<Package>,
         on_uninstall: &mut Option<Package>,
         on_update: &mut Option<Package>,
         on_update_selected: &mut Option<Vec<String>>,

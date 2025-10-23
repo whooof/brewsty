@@ -85,8 +85,8 @@ impl PasswordModal {
 
                     let response = ui.add(password_field);
 
-                    // Request focus for the password field on first render
-                    if response.changed() || response.clicked() {
+                    // Request focus for the password field
+                    if response.gained_focus() {
                         response.request_focus();
                     }
 
