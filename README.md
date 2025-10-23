@@ -34,6 +34,12 @@ Use, fork, and learn freely. If you find a bug, blame the robots, keep the credi
   - Clean package cache
   - Remove old package versions
   - Update all packages at once
+  - Sequential updates: Update packages one at a time with progress tracking
+
+- 🔐 **Security**
+  - Password authentication modal for install/uninstall operations
+  - Automatic password error detection and retry mechanism
+  - Secure password input (hidden field with show/hide toggle)
 
 - 🎨 **Modern UI**
   - Clean, intuitive interface built with egui
@@ -67,6 +73,8 @@ src/
 - **Dependency Inversion**: Use cases depend on repository abstractions
 - **Interface Segregation**: Clean, focused trait definitions
 - **Testability**: Repository pattern allows easy mocking and testing
+- **Sequential Operations**: Long-running updates process packages one at a time with UI feedback
+- **Graceful Auth Handling**: Automatic detection of password requirements with user-friendly modal
 
 ## Prerequisites
 
@@ -103,13 +111,34 @@ cargo run --features verbose-logging
 - `verbose-logging` - Enables TRACE level logging (useful for debugging)
 - Default (no flags) - INFO level (release) or DEBUG level (debug)
 
-The application provides four main tabs:</parameter>
-</invoke>
+The application provides four main tabs:
 
 - **Installed**: Browse all installed formulae and casks with version info
 - **Outdated**: See packages that need updates and upgrade them
+  - Select multiple packages for sequential updating
+  - Each package updates one at a time with progress tracking (e.g., "Updating 2/5: package-name...")
+  - Select All / Deselect All buttons for batch operations
 - **Search**: Find and install new packages from Homebrew
 - **Maintenance**: Clean cache and remove old versions
+
+### Sequential Package Updates
+
+When updating multiple packages, Brewsty processes them sequentially rather than all at once. This approach:
+- Reduces system load and improves stability
+- Provides clear progress feedback in the UI
+- Prevents overwhelming Homebrew with concurrent requests
+- Updates the package list locally after each successful update for instant feedback
+
+### Password Authentication
+
+If an operation (install, uninstall, update) requires administrator privileges:
+1. The app attempts the operation normally first
+2. If a password is required, a modal dialog appears
+3. Enter your administrator password in the secure input field
+4. The operation retries with the provided password
+5. On failure, you can try again or cancel
+
+The password input field includes a "Show password" toggle for verification.
 
 ## Technologies
 
@@ -118,6 +147,7 @@ The application provides four main tabs:</parameter>
 - **[eframe](https://github.com/emilk/egui/tree/master/crates/eframe)** - Native GUI application framework
 - **[Tokio](https://tokio.rs/)** - Async runtime for non-blocking operations
 - **[Homebrew](https://brew.sh/)** - macOS package manager
+- **[egui-winit](https://github.com/emilk/egui/tree/master/crates/egui-winit)** - Window integration for egui
 
 ## Contributing
 
