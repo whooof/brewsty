@@ -85,11 +85,26 @@ cargo build --release
 
 ## Usage
 
+### Running the Application
+
 ```bash
 cargo run --release
 ```
 
-The application provides four main tabs:
+### Debug Logging
+
+By default, the application shows INFO level logs in release builds and DEBUG level logs in debug builds. To enable verbose TRACE level logging for debugging:
+
+```bash
+cargo run --features verbose-logging
+```
+
+**Feature Flags:**
+- `verbose-logging` - Enables TRACE level logging (useful for debugging)
+- Default (no flags) - INFO level (release) or DEBUG level (debug)
+
+The application provides four main tabs:</parameter>
+</invoke>
 
 - **Installed**: Browse all installed formulae and casks with version info
 - **Outdated**: See packages that need updates and upgrade them
