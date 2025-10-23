@@ -1001,15 +1001,15 @@ impl BrewstyApp {
             self.status_message = message;
 
             if success {
-                self.tab_manager.mark_unloaded(Tab::Installed);
-                self.tab_manager.switch_to(Tab::Installed);
-                self.load_installed_packages();
-
                 if let Some(pkg_name) = installed_pkg_name {
                     if let Some(mut pkg) = self.search_results.get_package(&pkg_name) {
                         pkg.installed = true;
                         self.search_results.update_package(pkg);
                     }
+                    // Locally update installed packages instead of reloading
+                    self.merged_packages.remove_from_outdated(&pkg_name);
+                    self.merged_packages
+                        .remove_from_outdated_selection_by_name(&pkg_name);
                 }
             }
         }
@@ -1023,24 +1023,30 @@ impl BrewstyApp {
             self.status_message = message;
 
             if success {
-                self.tab_manager.mark_unloaded(Tab::Installed);
-                self.tab_manager.switch_to(Tab::Installed);
-                self.load_installed_packages();
+                if let Some(pkg) = self.current_uninstall_package.as_ref() {
+                    // Locally remove uninstalled package instead of reloading
+                    self.merged_packages.remove_installed_package(pkg);
+                }
             }
         }
 
         if let Some((success, message)) = result.update_completed {
             self.loading_update = false;
             self.loading = false;
-            if let Some(pkg) = self.current_update_package.take() {
-                self.packages_in_operation.remove(&pkg);
+            let pkg = self.current_update_package.take();
+            if let Some(ref pkg_name) = pkg {
+                self.packages_in_operation.remove(pkg_name);
             }
             self.status_message = message;
 
             if success {
-                self.tab_manager.mark_unloaded(Tab::Installed);
-                self.tab_manager.switch_to(Tab::Installed);
-                self.load_installed_packages();
+                if let Some(pkg_name) = pkg {
+                    // Locally move package from outdated to installed instead of reloading
+                    self.merged_packages
+                        .mark_package_updated(&pkg_name, "".to_string());
+                    self.merged_packages
+                        .remove_from_outdated_selection_by_name(&pkg_name);
+                }
             }
         }
 
@@ -1048,13 +1054,19 @@ impl BrewstyApp {
             self.loading_update_all = false;
             self.loading = false;
             self.status_message = message;
-            self.merged_packages.clear_outdated_selection();
 
             if success {
-                self.tab_manager.mark_unloaded(Tab::Installed);
-                self.tab_manager.switch_to(Tab::Installed);
-                self.load_installed_packages();
+                // Locally update all packages that were in operation instead of reloading
+                for pkg_name in self.packages_in_operation.iter() {
+                    self.merged_packages
+                        .mark_package_updated(pkg_name, "".to_string());
+                    self.merged_packages
+                        .remove_from_outdated_selection_by_name(pkg_name);
+                }
+                self.packages_in_operation.clear();
             }
+
+            self.merged_packages.clear_outdated_selection();
         }
 
         if let Some((_success, message)) = result.clean_cache_completed {

@@ -50,6 +50,46 @@ impl MergedPackageList {
             .cloned()
     }
 
+    pub fn mark_package_updated(&mut self, package_name: &str, new_version: String) {
+        // Remove from outdated packages
+        if let Some(pos) = self
+            .outdated_packages
+            .iter()
+            .position(|p| p.name == package_name)
+        {
+            let mut package = self.outdated_packages.remove(pos);
+            // Update version and clear available_version since it's now current
+            package.version = Some(new_version);
+            package.available_version = None;
+            // Add to installed packages
+            if !self.packages.iter().any(|p| p.name == package.name) {
+                self.packages.push(package);
+            } else if let Some(existing) = self.packages.iter_mut().find(|p| p.name == package.name)
+            {
+                existing.version = Some(new_version);
+                existing.available_version = None;
+            }
+        }
+    }
+
+    pub fn remove_from_outdated_selection_by_name(&mut self, package_name: &str) {
+        self.outdated_selection.deselect(package_name);
+    }
+
+    pub fn remove_installed_package(&mut self, package_name: &str) {
+        if let Some(pos) = self.packages.iter().position(|p| p.name == package_name) {
+            self.packages.remove(pos);
+        }
+    }
+
+    pub fn add_installed_package(&mut self, package: Package) {
+        if !self.packages.iter().any(|p| p.name == package.name) {
+            self.packages.push(package);
+        } else if let Some(existing) = self.packages.iter_mut().find(|p| p.name == package.name) {
+            *existing = package;
+        }
+    }
+
     pub fn get_show_info_action(&mut self) -> Option<Package> {
         self.show_info_action.take()
     }
