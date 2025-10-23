@@ -107,11 +107,17 @@ impl BrewstyApp {
 
         let installed_packages = Arc::new(Mutex::new(Vec::new()));
         let outdated_packages = Arc::new(Mutex::new(Vec::new()));
-        let output_log = Arc::new(Mutex::new(Vec::new()));
+        let installed_log = Arc::new(Mutex::new(Vec::new()));
+        let outdated_log = Arc::new(Mutex::new(Vec::new()));
 
         self.task_manager.set_active_task(AsyncTask::LoadInstalled {
             packages: Arc::clone(&installed_packages),
-            logs: Arc::clone(&output_log),
+            logs: Arc::clone(&installed_log),
+        });
+
+        self.task_manager.set_active_task(AsyncTask::LoadOutdated {
+            packages: Arc::clone(&outdated_packages),
+            logs: Arc::clone(&outdated_log),
         });
 
         thread::spawn(move || {
@@ -174,18 +180,19 @@ impl BrewstyApp {
 
                     let mut installed = Vec::new();
                     let mut outdated = Vec::new();
-                    let mut logs = Vec::new();
+                    let mut installed_logs = Vec::new();
+                    let mut outdated_logs = Vec::new();
 
                     match installed_formulae_result {
                         Ok(pkgs) => {
                             let msg = format!("Loaded {} installed formulae", pkgs.len());
-                            logs.push(msg.clone());
+                            installed_logs.push(msg.clone());
                             tracing::info!("{}", msg);
                             installed.extend(pkgs);
                         }
                         Err(e) => {
                             let msg = format!("Error loading installed formulae: {}", e);
-                            logs.push(msg.clone());
+                            installed_logs.push(msg.clone());
                             tracing::error!("{}", msg);
                         }
                     }
@@ -193,13 +200,13 @@ impl BrewstyApp {
                     match installed_casks_result {
                         Ok(pkgs) => {
                             let msg = format!("Loaded {} installed casks", pkgs.len());
-                            logs.push(msg.clone());
+                            installed_logs.push(msg.clone());
                             tracing::info!("{}", msg);
                             installed.extend(pkgs);
                         }
                         Err(e) => {
                             let msg = format!("Error loading installed casks: {}", e);
-                            logs.push(msg.clone());
+                            installed_logs.push(msg.clone());
                             tracing::error!("{}", msg);
                         }
                     }
@@ -207,13 +214,13 @@ impl BrewstyApp {
                     match outdated_formulae_result {
                         Ok(pkgs) => {
                             let msg = format!("Loaded {} outdated formulae", pkgs.len());
-                            logs.push(msg.clone());
+                            outdated_logs.push(msg.clone());
                             tracing::info!("{}", msg);
                             outdated.extend(pkgs);
                         }
                         Err(e) => {
                             let msg = format!("Error loading outdated formulae: {}", e);
-                            logs.push(msg.clone());
+                            outdated_logs.push(msg.clone());
                             tracing::error!("{}", msg);
                         }
                     }
@@ -221,13 +228,13 @@ impl BrewstyApp {
                     match outdated_casks_result {
                         Ok(pkgs) => {
                             let msg = format!("Loaded {} outdated casks", pkgs.len());
-                            logs.push(msg.clone());
+                            outdated_logs.push(msg.clone());
                             tracing::info!("{}", msg);
                             outdated.extend(pkgs);
                         }
                         Err(e) => {
                             let msg = format!("Error loading outdated casks: {}", e);
-                            logs.push(msg.clone());
+                            outdated_logs.push(msg.clone());
                             tracing::error!("{}", msg);
                         }
                     }
@@ -248,20 +255,35 @@ impl BrewstyApp {
                         anyhow::anyhow!("Failed to lock outdated packages: {}", e)
                     })? = outdated;
 
-                    logs.push("Finished loading installed and outdated packages".to_string());
+                    installed_logs.push("Finished loading installed packages".to_string());
+                    outdated_logs.push("Finished loading outdated packages".to_string());
                     tracing::info!("Finished loading installed and outdated packages");
 
-                    tracing::debug!("About to lock logs mutex with {} log entries", logs.len());
-                    *output_log
+                    tracing::debug!(
+                        "About to lock installed logs mutex with {} log entries",
+                        installed_logs.len()
+                    );
+                    *installed_log
                         .lock()
-                        .map_err(|e| anyhow::anyhow!("Failed to lock logs: {}", e))? = logs;
+                        .map_err(|e| anyhow::anyhow!("Failed to lock installed logs: {}", e))? =
+                        installed_logs;
+
+                    tracing::debug!(
+                        "About to lock outdated logs mutex with {} log entries",
+                        outdated_logs.len()
+                    );
+                    *outdated_log
+                        .lock()
+                        .map_err(|e| anyhow::anyhow!("Failed to lock outdated logs: {}", e))? =
+                        outdated_logs;
+
                     tracing::debug!("Successfully updated mutexes");
 
                     Ok(())
                 })()
             {
                 tracing::error!("Error in load_installed_packages thread: {}", e);
-                if let Ok(mut logs) = output_log.lock() {
+                if let Ok(mut logs) = installed_log.lock() {
                     logs.push(format!("Thread error: {}", e));
                 }
             }
@@ -292,6 +314,8 @@ impl BrewstyApp {
 
         let packages_in_operation = Arc::new(Mutex::new(std::collections::HashSet::new()));
         let output_log = Arc::new(Mutex::new(Vec::new()));
+        let success = Arc::new(Mutex::new(None));
+        let message = Arc::new(Mutex::new(String::new()));
 
         for package in &packages_to_update {
             self.packages_in_operation.insert(package.name.clone());
@@ -301,7 +325,9 @@ impl BrewstyApp {
         }
 
         self.task_manager.set_active_task(AsyncTask::UpdateAll {
+            success: Arc::clone(&success),
             logs: Arc::clone(&output_log),
+            message: Arc::clone(&message),
         });
 
         thread::spawn(move || {
@@ -486,7 +512,7 @@ impl BrewstyApp {
         let executor = self.executor.clone();
 
         thread::spawn(move || {
-            let result = executor.execute(async move { use_case.execute(package).await });
+            let result = executor.execute(async move { use_case.execute(&package).await });
 
             let mut log_vec = Vec::new();
             match result {
@@ -944,7 +970,6 @@ impl BrewstyApp {
             self.tab_manager.mark_loaded(Tab::Installed);
             self.status_message = "Packages loaded".to_string();
         }
-</parameter>
 
         if let Some(packages) = result.search_results {
             self.search_results.update_packages(packages.clone());
@@ -1027,7 +1052,6 @@ impl BrewstyApp {
                 self.load_installed_packages();
             }
         }
-</parameter>
 
         if let Some((_success, message)) = result.clean_cache_completed {
             self.loading_clean_cache = false;

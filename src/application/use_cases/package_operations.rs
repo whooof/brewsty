@@ -100,7 +100,7 @@ impl UpdatePackage {
         }
     }
 
-    pub async fn execute(&self, package: Package) -> Result<()> {
+    pub async fn execute(&self, package: &Package) -> Result<()> {
         self.use_case.repository().update_package(&package).await
     }
 }
