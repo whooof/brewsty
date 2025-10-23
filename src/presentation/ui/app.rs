@@ -86,7 +86,7 @@ impl BrewstyApp {
             executor,
             loading: false,
             status_message: String::new(),
-            output_panel_height: 150.0,
+            output_panel_height: 250.0,
         }
     }
 

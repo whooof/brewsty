@@ -66,6 +66,16 @@ impl MergedPackageList {
         self.outdated_selection.clear();
     }
 
+    pub fn select_all_outdated(&mut self) {
+        for package in &self.outdated_packages {
+            self.outdated_selection.select(package.name.clone());
+        }
+    }
+
+    pub fn deselect_all_outdated(&mut self) {
+        self.outdated_selection.clear();
+    }
+
     pub fn has_selected_outdated(&self) -> bool {
         self.outdated_selection.has_selection()
     }
@@ -208,6 +218,12 @@ impl MergedPackageList {
 
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
+                        if ui.button("Select All").clicked() {
+                            self.select_all_outdated();
+                        }
+                        if ui.button("Deselect All").clicked() {
+                            self.deselect_all_outdated();
+                        }
                         if ui
                             .add_enabled(
                                 self.outdated_selection.has_selection(),
