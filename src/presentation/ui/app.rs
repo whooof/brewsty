@@ -2,7 +2,7 @@ use crate::application::UseCaseContainer;
 use crate::domain::entities::{Package, PackageType};
 use crate::presentation::components::{
     CleanupAction, CleanupModal, CleanupType, FilterState, InfoModal, LogLevel, LogManager,
-    PackageList, Tab, TabManager,
+    MergedPackageList, PackageList, SelectionState, Tab, TabManager,
 };
 use crate::presentation::services::{AsyncExecutor, AsyncTask, AsyncTaskManager};
 use anyhow::Result;
@@ -18,8 +18,7 @@ pub struct BrewstyApp {
     log_manager: LogManager,
     log_rx: Receiver<String>,
 
-    installed_packages: PackageList,
-    outdated_packages: PackageList,
+    merged_packages: MergedPackageList,
     search_results: PackageList,
 
     auto_load_version_info: bool,
@@ -40,6 +39,7 @@ pub struct BrewstyApp {
     current_install_package: Option<String>,
     current_uninstall_package: Option<String>,
     current_update_package: Option<String>,
+    current_update_selected_packages: Option<Vec<String>>,
     packages_in_operation: std::collections::HashSet<String>,
 
     task_manager: AsyncTaskManager,
@@ -63,8 +63,7 @@ impl BrewstyApp {
             info_modal: InfoModal::new(),
             log_manager: LogManager::new(),
             log_rx,
-            installed_packages: PackageList::new(),
-            outdated_packages: PackageList::new(),
+            merged_packages: MergedPackageList::new(),
             search_results: PackageList::new(),
             auto_load_version_info: false,
             initialized: false,
@@ -80,6 +79,7 @@ impl BrewstyApp {
             current_install_package: None,
             current_uninstall_package: None,
             current_update_package: None,
+            current_update_selected_packages: None,
             packages_in_operation: std::collections::HashSet::new(),
             task_manager: AsyncTaskManager::new(),
             use_cases,
@@ -91,20 +91,22 @@ impl BrewstyApp {
     }
 
     fn load_installed_packages(&mut self) {
-        if self.loading_installed {
+        if self.loading_installed || self.loading_outdated {
             return;
         }
 
         self.loading_installed = true;
-        self.status_message = "Loading installed packages...".to_string();
+        self.loading_outdated = true;
+        self.status_message = "Loading installed and outdated packages...".to_string();
         self.log_manager
-            .push("Loading installed packages (formulae and casks)".to_string());
-        tracing::info!("Loading installed packages (formulae and casks)");
+            .push("Loading installed and outdated packages (formulae and casks)".to_string());
+        tracing::info!("Loading installed and outdated packages (formulae and casks)");
 
-        let use_case_formulae = Arc::clone(&self.use_cases.list_installed);
-        let use_case_casks = Arc::clone(&self.use_cases.list_installed);
+        let use_case_installed = Arc::clone(&self.use_cases.list_installed);
+        let use_case_outdated = Arc::clone(&self.use_cases.list_outdated);
 
         let installed_packages = Arc::new(Mutex::new(Vec::new()));
+        let outdated_packages = Arc::new(Mutex::new(Vec::new()));
         let output_log = Arc::new(Mutex::new(Vec::new()));
 
         self.task_manager.set_active_task(AsyncTask::LoadInstalled {
@@ -114,86 +116,150 @@ impl BrewstyApp {
 
         thread::spawn(move || {
             tracing::trace!("THREAD STARTED: load_installed_packages");
-            if let Err(e) = (|| -> anyhow::Result<()> {
-                tracing::trace!("THREAD: about to create runtime");
-                let rt = tokio::runtime::Runtime::new()?;
-                tracing::trace!("THREAD: runtime created");
+            if let Err(e) =
+                (|| -> anyhow::Result<()> {
+                    tracing::trace!("THREAD: about to create runtime");
+                    let rt = tokio::runtime::Runtime::new()?;
+                    tracing::trace!("THREAD: runtime created");
 
-                tracing::debug!("Starting to load installed packages");
+                    tracing::debug!("Starting to load installed packages");
 
-                tracing::trace!("THREAD: about to execute formulae");
-                let formulae_result =
-                    rt.block_on(async { use_case_formulae.execute(PackageType::Formula).await });
+                    tracing::trace!("THREAD: about to execute installed formulae");
+                    let installed_formulae_result = rt
+                        .block_on(async { use_case_installed.execute(PackageType::Formula).await });
 
-                tracing::debug!(
-                    "Formulae result: {:?}",
-                    formulae_result
-                        .as_ref()
-                        .map(|p| p.len())
-                        .map_err(|e| e.to_string())
-                );
+                    tracing::debug!(
+                        "Installed formulae result: {:?}",
+                        installed_formulae_result
+                            .as_ref()
+                            .map(|p| p.len())
+                            .map_err(|e| e.to_string())
+                    );
 
-                tracing::trace!("THREAD: about to execute casks");
-                let casks_result =
-                    rt.block_on(async { use_case_casks.execute(PackageType::Cask).await });
+                    tracing::trace!("THREAD: about to execute installed casks");
+                    let installed_casks_result =
+                        rt.block_on(async { use_case_installed.execute(PackageType::Cask).await });
 
-                tracing::debug!(
-                    "Casks result: {:?}",
-                    casks_result
-                        .as_ref()
-                        .map(|p| p.len())
-                        .map_err(|e| e.to_string())
-                );
+                    tracing::debug!(
+                        "Installed casks result: {:?}",
+                        installed_casks_result
+                            .as_ref()
+                            .map(|p| p.len())
+                            .map_err(|e| e.to_string())
+                    );
 
-                let mut packages = Vec::new();
-                let mut logs = Vec::new();
+                    tracing::trace!("THREAD: about to execute outdated formulae");
+                    let outdated_formulae_result = rt
+                        .block_on(async { use_case_outdated.execute(PackageType::Formula).await });
 
-                match formulae_result {
-                    Ok(pkgs) => {
-                        let msg = format!("Loaded {} formulae", pkgs.len());
-                        logs.push(msg.clone());
-                        tracing::info!("{}", msg);
-                        packages.extend(pkgs);
+                    tracing::debug!(
+                        "Outdated formulae result: {:?}",
+                        outdated_formulae_result
+                            .as_ref()
+                            .map(|p| p.len())
+                            .map_err(|e| e.to_string())
+                    );
+
+                    tracing::trace!("THREAD: about to execute outdated casks");
+                    let outdated_casks_result =
+                        rt.block_on(async { use_case_outdated.execute(PackageType::Cask).await });
+
+                    tracing::debug!(
+                        "Outdated casks result: {:?}",
+                        outdated_casks_result
+                            .as_ref()
+                            .map(|p| p.len())
+                            .map_err(|e| e.to_string())
+                    );
+
+                    let mut installed = Vec::new();
+                    let mut outdated = Vec::new();
+                    let mut logs = Vec::new();
+
+                    match installed_formulae_result {
+                        Ok(pkgs) => {
+                            let msg = format!("Loaded {} installed formulae", pkgs.len());
+                            logs.push(msg.clone());
+                            tracing::info!("{}", msg);
+                            installed.extend(pkgs);
+                        }
+                        Err(e) => {
+                            let msg = format!("Error loading installed formulae: {}", e);
+                            logs.push(msg.clone());
+                            tracing::error!("{}", msg);
+                        }
                     }
-                    Err(e) => {
-                        let msg = format!("Error loading formulae: {}", e);
-                        logs.push(msg.clone());
-                        tracing::error!("{}", msg);
+
+                    match installed_casks_result {
+                        Ok(pkgs) => {
+                            let msg = format!("Loaded {} installed casks", pkgs.len());
+                            logs.push(msg.clone());
+                            tracing::info!("{}", msg);
+                            installed.extend(pkgs);
+                        }
+                        Err(e) => {
+                            let msg = format!("Error loading installed casks: {}", e);
+                            logs.push(msg.clone());
+                            tracing::error!("{}", msg);
+                        }
                     }
-                }
 
-                match casks_result {
-                    Ok(pkgs) => {
-                        let msg = format!("Loaded {} casks", pkgs.len());
-                        logs.push(msg.clone());
-                        tracing::info!("{}", msg);
-                        packages.extend(pkgs);
+                    match outdated_formulae_result {
+                        Ok(pkgs) => {
+                            let msg = format!("Loaded {} outdated formulae", pkgs.len());
+                            logs.push(msg.clone());
+                            tracing::info!("{}", msg);
+                            outdated.extend(pkgs);
+                        }
+                        Err(e) => {
+                            let msg = format!("Error loading outdated formulae: {}", e);
+                            logs.push(msg.clone());
+                            tracing::error!("{}", msg);
+                        }
                     }
-                    Err(e) => {
-                        let msg = format!("Error loading casks: {}", e);
-                        logs.push(msg.clone());
-                        tracing::error!("{}", msg);
+
+                    match outdated_casks_result {
+                        Ok(pkgs) => {
+                            let msg = format!("Loaded {} outdated casks", pkgs.len());
+                            logs.push(msg.clone());
+                            tracing::info!("{}", msg);
+                            outdated.extend(pkgs);
+                        }
+                        Err(e) => {
+                            let msg = format!("Error loading outdated casks: {}", e);
+                            logs.push(msg.clone());
+                            tracing::error!("{}", msg);
+                        }
                     }
-                }
 
-                tracing::debug!("About to write {} packages to mutex", packages.len());
-                tracing::debug!("About to lock packages mutex");
-                *installed_packages
-                    .lock()
-                    .map_err(|e| anyhow::anyhow!("Failed to lock packages: {}", e))? = packages;
-                tracing::debug!("Successfully locked packages, now adding finish log");
+                    tracing::debug!(
+                        "About to write {} installed packages to mutex",
+                        installed.len()
+                    );
+                    *installed_packages.lock().map_err(|e| {
+                        anyhow::anyhow!("Failed to lock installed packages: {}", e)
+                    })? = installed;
 
-                logs.push("Finished loading installed packages".to_string());
-                tracing::info!("Finished loading installed packages");
+                    tracing::debug!(
+                        "About to write {} outdated packages to mutex",
+                        outdated.len()
+                    );
+                    *outdated_packages.lock().map_err(|e| {
+                        anyhow::anyhow!("Failed to lock outdated packages: {}", e)
+                    })? = outdated;
 
-                tracing::debug!("About to lock logs mutex with {} log entries", logs.len());
-                *output_log
-                    .lock()
-                    .map_err(|e| anyhow::anyhow!("Failed to lock logs: {}", e))? = logs;
-                tracing::debug!("Successfully updated mutexes");
+                    logs.push("Finished loading installed and outdated packages".to_string());
+                    tracing::info!("Finished loading installed and outdated packages");
 
-                Ok(())
-            })() {
+                    tracing::debug!("About to lock logs mutex with {} log entries", logs.len());
+                    *output_log
+                        .lock()
+                        .map_err(|e| anyhow::anyhow!("Failed to lock logs: {}", e))? = logs;
+                    tracing::debug!("Successfully updated mutexes");
+
+                    Ok(())
+                })()
+            {
                 tracing::error!("Error in load_installed_packages thread: {}", e);
                 if let Ok(mut logs) = output_log.lock() {
                     logs.push(format!("Thread error: {}", e));
@@ -203,25 +269,38 @@ impl BrewstyApp {
         });
     }
 
-    fn load_outdated_packages(&mut self) {
-        if self.loading_outdated {
+    fn handle_update_selected(&mut self, package_names: Vec<String>) {
+        if self.loading_update_all {
             return;
         }
 
-        self.loading_outdated = true;
-        self.status_message = "Loading outdated packages...".to_string();
+        self.loading_update_all = true;
+        let count = package_names.len();
+        self.status_message = format!("Updating {} selected packages...", count);
         self.log_manager
-            .push("Loading outdated packages (formulae and casks)".to_string());
-        tracing::info!("Loading outdated packages (formulae and casks)");
+            .push(format!("Updating {} selected packages", count));
+        tracing::info!("Updating {} selected packages", count);
 
-        let use_case_formulae = Arc::clone(&self.use_cases.list_outdated);
-        let use_case_casks = Arc::clone(&self.use_cases.list_outdated);
+        let update_use_case = Arc::clone(&self.use_cases.update);
+        let mut packages_to_update = Vec::new();
 
-        let outdated_packages = Arc::new(Mutex::new(Vec::new()));
+        for package_name in package_names {
+            if let Some(package) = self.merged_packages.get_package(&package_name) {
+                packages_to_update.push(package);
+            }
+        }
+
+        let packages_in_operation = Arc::new(Mutex::new(std::collections::HashSet::new()));
         let output_log = Arc::new(Mutex::new(Vec::new()));
 
-        self.task_manager.set_active_task(AsyncTask::LoadOutdated {
-            packages: Arc::clone(&outdated_packages),
+        for package in &packages_to_update {
+            self.packages_in_operation.insert(package.name.clone());
+            if let Ok(mut ops) = packages_in_operation.lock() {
+                ops.insert(package.name.clone());
+            }
+        }
+
+        self.task_manager.set_active_task(AsyncTask::UpdateAll {
             logs: Arc::clone(&output_log),
         });
 
@@ -229,86 +308,33 @@ impl BrewstyApp {
             if let Err(e) = (|| -> Result<()> {
                 let rt = tokio::runtime::Runtime::new()?;
 
-                tracing::debug!("Starting to load outdated packages");
-
-                let formulae_result =
-                    rt.block_on(async { use_case_formulae.execute(PackageType::Formula).await });
-
-                tracing::debug!(
-                    "Outdated formulae result: {:?}",
-                    formulae_result
-                        .as_ref()
-                        .map(|p| p.len())
-                        .map_err(|e| e.to_string())
-                );
-
-                let casks_result =
-                    rt.block_on(async { use_case_casks.execute(PackageType::Cask).await });
-
-                tracing::debug!(
-                    "Outdated casks result: {:?}",
-                    casks_result
-                        .as_ref()
-                        .map(|p| p.len())
-                        .map_err(|e| e.to_string())
-                );
-
-                let mut packages = Vec::new();
-                let mut logs = Vec::new();
-
-                match formulae_result {
-                    Ok(pkgs) => {
-                        let msg = format!("Loaded {} outdated formulae", pkgs.len());
-                        logs.push(msg.clone());
-                        tracing::info!("{}", msg);
-                        packages.extend(pkgs);
-                    }
-                    Err(e) => {
-                        let msg = format!("Error loading outdated formulae: {}", e);
-                        logs.push(msg.clone());
-                        tracing::error!("{}", msg);
+                for package in packages_to_update {
+                    match rt.block_on(update_use_case.execute(&package)) {
+                        Ok(_) => {
+                            let msg = format!("Successfully updated {}", package.name);
+                            if let Ok(mut logs) = output_log.lock() {
+                                logs.push(msg.clone());
+                            }
+                            tracing::info!("{}", msg);
+                        }
+                        Err(e) => {
+                            let msg = format!("Error updating {}: {}", package.name, e);
+                            if let Ok(mut logs) = output_log.lock() {
+                                logs.push(msg.clone());
+                            }
+                            tracing::error!("{}", msg);
+                        }
                     }
                 }
 
-                match casks_result {
-                    Ok(pkgs) => {
-                        let msg = format!("Loaded {} outdated casks", pkgs.len());
-                        logs.push(msg.clone());
-                        tracing::info!("{}", msg);
-                        packages.extend(pkgs);
-                    }
-                    Err(e) => {
-                        let msg = format!("Error loading outdated casks: {}", e);
-                        logs.push(msg.clone());
-                        tracing::error!("{}", msg);
-                    }
+                if let Ok(mut logs) = output_log.lock() {
+                    logs.push("Finished updating selected packages".to_string());
                 }
-
-                tracing::debug!(
-                    "About to write {} outdated packages to mutex",
-                    packages.len()
-                );
-                tracing::debug!("About to lock outdated packages mutex");
-                *outdated_packages
-                    .lock()
-                    .map_err(|e| anyhow::anyhow!("Failed to lock packages: {}", e))? = packages;
-                tracing::debug!("Successfully locked packages, now adding finish log");
-
-                logs.push("Finished loading outdated packages".to_string());
-                tracing::info!("Finished loading outdated packages");
-
-                tracing::debug!(
-                    "About to lock outdated logs mutex with {} log entries",
-                    logs.len()
-                );
-                *output_log
-                    .lock()
-                    .map_err(|e| anyhow::anyhow!("Failed to lock logs: {}", e))? = logs;
-                tracing::debug!("Successfully updated outdated mutexes");
+                tracing::info!("Finished updating selected packages");
 
                 Ok(())
             })() {
-                tracing::error!("Error in load_outdated_packages thread: {}", e);
+                tracing::error!("Error in handle_update_selected thread: {}", e);
                 if let Ok(mut logs) = output_log.lock() {
                     logs.push(format!("Thread error: {}", e));
                 }
@@ -904,19 +930,21 @@ impl BrewstyApp {
 
         if let Some(packages) = result.installed_packages {
             tracing::info!("Got {} installed packages from poll", packages.len());
-            self.installed_packages.update_packages(packages);
-            self.tab_manager.mark_loaded(Tab::Installed);
+            self.merged_packages.update_packages(packages);
             self.loading_installed = false;
-            self.status_message = "Packages loaded".to_string();
         }
 
         if let Some(packages) = result.outdated_packages {
             tracing::info!("Got {} outdated packages from poll", packages.len());
-            self.outdated_packages.update_packages(packages);
-            self.tab_manager.mark_loaded(Tab::Outdated);
+            self.merged_packages.update_outdated_packages(packages);
             self.loading_outdated = false;
-            self.status_message = "Outdated packages loaded".to_string();
         }
+
+        if self.loading_installed == false && self.loading_outdated == false {
+            self.tab_manager.mark_loaded(Tab::Installed);
+            self.status_message = "Packages loaded".to_string();
+        }
+</parameter>
 
         if let Some(packages) = result.search_results {
             self.search_results.update_packages(packages.clone());
@@ -984,9 +1012,7 @@ impl BrewstyApp {
 
             if success {
                 self.tab_manager.mark_unloaded(Tab::Installed);
-                self.tab_manager.mark_unloaded(Tab::Outdated);
                 self.load_installed_packages();
-                self.load_outdated_packages();
             }
         }
 
@@ -994,14 +1020,14 @@ impl BrewstyApp {
             self.loading_update_all = false;
             self.loading = false;
             self.status_message = message;
+            self.merged_packages.clear_outdated_selection();
 
             if success {
                 self.tab_manager.mark_unloaded(Tab::Installed);
-                self.tab_manager.mark_unloaded(Tab::Outdated);
                 self.load_installed_packages();
-                self.load_outdated_packages();
             }
         }
+</parameter>
 
         if let Some((_success, message)) = result.clean_cache_completed {
             self.loading_clean_cache = false;
@@ -1100,21 +1126,15 @@ impl eframe::App for BrewstyApp {
                 ui.separator();
 
                 if ui
-                    .selectable_label(self.tab_manager.is_current(Tab::Installed), "Installed")
+                    .selectable_label(
+                        self.tab_manager.is_current(Tab::Installed),
+                        "Installed & Outdated",
+                    )
                     .clicked()
                 {
                     self.tab_manager.switch_to(Tab::Installed);
                     if !self.tab_manager.is_loaded(Tab::Installed) {
                         self.load_installed_packages();
-                    }
-                }
-                if ui
-                    .selectable_label(self.tab_manager.is_current(Tab::Outdated), "Outdated")
-                    .clicked()
-                {
-                    self.tab_manager.switch_to(Tab::Outdated);
-                    if !self.tab_manager.is_loaded(Tab::Outdated) {
-                        self.load_outdated_packages();
                     }
                 }
                 if ui
@@ -1208,21 +1228,23 @@ impl eframe::App for BrewstyApp {
 
                     ui.separator();
 
-                    if self.loading_installed {
-                        self.show_loader(ui, "Loading installed packages...");
+                    if self.loading_installed || self.loading_outdated {
+                        self.show_loader(ui, "Loading packages...");
                     } else {
                         let mut install_action = None;
                         let mut uninstall_action = None;
                         let mut update_action = None;
+                        let mut update_selected_action = None;
                         let mut pin_action = None;
                         let mut unpin_action = None;
                         let mut load_info_action = None;
 
-                        self.installed_packages.show_filtered_with_search_and_pin(
+                        self.merged_packages.show_merged_with_search_and_pin(
                             ui,
                             &mut install_action,
                             &mut uninstall_action,
                             &mut update_action,
+                            &mut update_selected_action,
                             self.filter_state.show_formulae(),
                             self.filter_state.show_casks(),
                             self.filter_state.installed_search_query(),
@@ -1241,69 +1263,8 @@ impl eframe::App for BrewstyApp {
                         if let Some(package) = update_action {
                             self.handle_update(package);
                         }
-                        if let Some(package) = pin_action {
-                            self.handle_pin(package);
-                        }
-                        if let Some(package) = unpin_action {
-                            self.handle_unpin(package);
-                        }
-                        if let Some(package) = self.installed_packages.get_show_info_action() {
-                            self.info_modal.show(package);
-                        }
-                    }
-                }
-
-                Tab::Outdated => {
-                    ui.horizontal(|ui| {
-                        let mut show_formulae = self.filter_state.show_formulae();
-                        let mut show_casks = self.filter_state.show_casks();
-                        ui.checkbox(&mut show_formulae, "Show Formulae");
-                        ui.checkbox(&mut show_casks, "Show Casks");
-                        self.filter_state.set_show_formulae(show_formulae);
-                        self.filter_state.set_show_casks(show_casks);
-                        ui.separator();
-                        if ui.button("Refresh").clicked() {
-                            self.load_outdated_packages();
-                        }
-                        if ui.button("Update All").clicked() {
-                            self.handle_update_all();
-                        }
-                    });
-
-                    ui.separator();
-
-                    if self.loading_outdated {
-                        self.show_loader(ui, "Loading outdated packages...");
-                    } else {
-                        let mut install_action = None;
-                        let mut uninstall_action = None;
-                        let mut update_action = None;
-                        let mut pin_action = None;
-                        let mut unpin_action = None;
-                        let mut load_info_action = None;
-
-                        self.outdated_packages.show_filtered_with_search_and_pin(
-                            ui,
-                            &mut install_action,
-                            &mut uninstall_action,
-                            &mut update_action,
-                            self.filter_state.show_formulae(),
-                            self.filter_state.show_casks(),
-                            "",
-                            &mut load_info_action,
-                            &self.packages_in_operation,
-                            &mut pin_action,
-                            &mut unpin_action,
-                        );
-
-                        if let Some(package) = install_action {
-                            self.handle_install(package);
-                        }
-                        if let Some(package) = uninstall_action {
-                            self.handle_uninstall(package);
-                        }
-                        if let Some(package) = update_action {
-                            self.handle_update(package);
+                        if let Some(package_names) = update_selected_action {
+                            self.handle_update_selected(package_names);
                         }
                         if let Some(package) = pin_action {
                             self.handle_pin(package);
@@ -1311,7 +1272,7 @@ impl eframe::App for BrewstyApp {
                         if let Some(package) = unpin_action {
                             self.handle_unpin(package);
                         }
-                        if let Some(package) = self.outdated_packages.get_show_info_action() {
+                        if let Some(package) = self.merged_packages.get_show_info_action() {
                             self.info_modal.show(package);
                         }
                     }
