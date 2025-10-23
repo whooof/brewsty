@@ -364,13 +364,20 @@ impl BrewstyApp {
         self.handle_update(package);
     }
 
-    fn check_and_handle_password_error(&mut self, error_msg: &str, operation: PendingOperation) {
-        // Check if the error indicates a password is needed
-        if error_msg.contains("authentication failure")
+    fn is_password_error(&self, error_msg: &str) -> bool {
+        error_msg.contains("authentication failure")
             || error_msg.contains("sudo")
             || error_msg.contains("password")
             || error_msg.contains("Permission denied")
-        {
+            || error_msg.contains("Incorrect password")
+            || error_msg.contains("incorrect password attempt")
+            || error_msg.contains("sorry, try again")
+            || error_msg.contains("sudo: a password is required")
+    }
+
+    fn check_and_handle_password_error(&mut self, error_msg: &str, operation: PendingOperation) {
+        // Check if the error indicates a password is needed or incorrect
+        if self.is_password_error(error_msg) {
             let op_name = match &operation {
                 PendingOperation::Install(_) => "Install".to_string(),
                 PendingOperation::Uninstall(_) => "Uninstall".to_string(),
@@ -1140,11 +1147,11 @@ impl BrewstyApp {
         if let Some((success, message)) = result.install_completed {
             self.loading_install = false;
             self.loading = false;
-            let installed_pkg_name = self.current_install_package.take();
+            let installed_pkg_name = self.current_install_package.clone();
             if let Some(pkg) = &installed_pkg_name {
                 self.packages_in_operation.remove(pkg);
             }
-            self.status_message = message;
+            self.status_message = message.clone();
 
             if success {
                 if let Some(pkg_name) = installed_pkg_name {
@@ -1157,21 +1164,50 @@ impl BrewstyApp {
                     self.merged_packages
                         .remove_from_outdated_selection_by_name(&pkg_name);
                 }
+                self.current_install_package = None;
+            } else {
+                // Check if this is a password error
+                if self.is_password_error(&message) {
+                    if let Some(pkg_name) = &installed_pkg_name {
+                        // Try to get the package from search results to retry with password
+                        if let Some(pkg) = self.search_results.get_package(pkg_name) {
+                            self.pending_operation = Some(PendingOperation::Install(pkg));
+                            self.password_modal.show(format!("Install {}", pkg_name));
+                        }
+                    }
+                } else {
+                    self.current_install_package = None;
+                }
             }
         }
 
         if let Some((success, message)) = result.uninstall_completed {
             self.loading_uninstall = false;
             self.loading = false;
-            if let Some(pkg) = self.current_uninstall_package.take() {
-                self.packages_in_operation.remove(&pkg);
+            let uninstall_pkg_name = self.current_uninstall_package.clone();
+            if let Some(pkg) = &uninstall_pkg_name {
+                self.packages_in_operation.remove(pkg);
             }
-            self.status_message = message;
+            self.status_message = message.clone();
 
             if success {
                 if let Some(pkg) = self.current_uninstall_package.as_ref() {
                     // Locally remove uninstalled package instead of reloading
                     self.merged_packages.remove_installed_package(pkg);
+                }
+                self.current_uninstall_package = None;
+            } else {
+                // Check if this is a password error
+                if self.is_password_error(&message) {
+                    if let Some(pkg_name) = &uninstall_pkg_name {
+                        // Try to get the package from merged packages to retry with password
+                        if let Some(pkg) = self.merged_packages.get_package(pkg_name) {
+                            self.pending_operation = Some(PendingOperation::Uninstall(pkg));
+                            self.password_modal.show(format!("Uninstall {}", pkg_name));
+                        }
+                    }
+                } else {
+                    self.current_uninstall_package = None;
                 }
             }
         }
@@ -1183,7 +1219,7 @@ impl BrewstyApp {
             if let Some(ref pkg_name) = pkg {
                 self.packages_in_operation.remove(pkg_name);
             }
-            self.status_message = message.clone();
+            self.status_message = message;
 
             if success {
                 if let Some(pkg_name) = pkg {
