@@ -50,25 +50,20 @@ impl MergedPackageList {
             .cloned()
     }
 
-    pub fn mark_package_updated(&mut self, package_name: &str, new_version: String) {
-        // Remove from outdated packages
+    pub fn mark_package_updated(&mut self, package_name: &str) {
+        // Remove from outdated packages list
         if let Some(pos) = self
             .outdated_packages
             .iter()
             .position(|p| p.name == package_name)
         {
-            let mut package = self.outdated_packages.remove(pos);
-            // Update version and clear available_version since it's now current
-            package.version = Some(new_version.clone());
-            package.available_version = None;
-            // Add to installed packages
-            if !self.packages.iter().any(|p| p.name == package.name) {
-                self.packages.push(package);
-            } else if let Some(existing) = self.packages.iter_mut().find(|p| p.name == package.name)
-            {
-                existing.version = Some(new_version);
-                existing.available_version = None;
-            }
+            self.outdated_packages.remove(pos);
+        }
+
+        // Update the installed package by clearing available_version
+        // (indicating it's now up-to-date)
+        if let Some(installed) = self.packages.iter_mut().find(|p| p.name == package_name) {
+            installed.available_version = None;
         }
     }
 

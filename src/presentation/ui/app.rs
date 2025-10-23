@@ -1007,7 +1007,7 @@ impl BrewstyApp {
                         self.search_results.update_package(pkg);
                     }
                     // Locally update installed packages instead of reloading
-                    self.merged_packages.remove_from_outdated(&pkg_name);
+                    self.merged_packages.mark_package_updated(&pkg_name);
                     self.merged_packages
                         .remove_from_outdated_selection_by_name(&pkg_name);
                 }
@@ -1042,8 +1042,7 @@ impl BrewstyApp {
             if success {
                 if let Some(pkg_name) = pkg {
                     // Locally move package from outdated to installed instead of reloading
-                    self.merged_packages
-                        .mark_package_updated(&pkg_name, "".to_string());
+                    self.merged_packages.mark_package_updated(&pkg_name);
                     self.merged_packages
                         .remove_from_outdated_selection_by_name(&pkg_name);
                 }
@@ -1058,8 +1057,7 @@ impl BrewstyApp {
             if success {
                 // Locally update all packages that were in operation instead of reloading
                 for pkg_name in self.packages_in_operation.iter() {
-                    self.merged_packages
-                        .mark_package_updated(pkg_name, "".to_string());
+                    self.merged_packages.mark_package_updated(pkg_name);
                     self.merged_packages
                         .remove_from_outdated_selection_by_name(pkg_name);
                 }
