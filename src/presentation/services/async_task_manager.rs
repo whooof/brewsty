@@ -1,4 +1,4 @@
-use crate::domain::entities::{Package, PackageType};
+use crate::domain::entities::{Package, PackageType, Service};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
@@ -70,6 +70,38 @@ pub enum AsyncTask {
         logs: Arc<Mutex<Vec<String>>>,
         message: Arc<Mutex<String>>,
     },
+    LoadServices {
+        services: Arc<Mutex<Vec<Service>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+    },
+    StartService {
+        service_name: String,
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    StopService {
+        service_name: String,
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    RestartService {
+        service_name: String,
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    ExportPackages {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    ImportPackages {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
 }
 
 pub struct TaskResult {
@@ -87,6 +119,12 @@ pub struct TaskResult {
     pub cleanup_old_versions_completed: Option<(bool, String)>,
     pub pin_completed: Option<(String, bool, String)>,
     pub unpin_completed: Option<(String, bool, String)>,
+    pub services: Option<Vec<Service>>,
+    pub start_service_completed: Option<(String, bool, String)>,
+    pub stop_service_completed: Option<(String, bool, String)>,
+    pub restart_service_completed: Option<(String, bool, String)>,
+    pub export_packages_completed: Option<(bool, String)>,
+    pub import_packages_completed: Option<(bool, String)>,
 }
 
 pub struct AsyncTaskManager {
@@ -179,6 +217,12 @@ impl AsyncTaskManager {
             cleanup_old_versions_completed: None,
             pin_completed: None,
             unpin_completed: None,
+            services: None,
+            start_service_completed: None,
+            stop_service_completed: None,
+            restart_service_completed: None,
+            export_packages_completed: None,
+            import_packages_completed: None,
         };
 
         let mut tasks_to_keep = Vec::new();
@@ -559,6 +603,187 @@ impl AsyncTaskManager {
                     if should_put_back {
                         active_tasks_to_keep.push(AsyncTask::Unpin {
                             package_name,
+                            success,
+                            logs,
+                            message,
+                        });
+                    }
+                }
+                AsyncTask::LoadServices { services, logs } => {
+                    let should_put_back = match logs.try_lock() {
+                        Ok(log) => {
+                            if !log.is_empty() {
+                                if let Ok(svc) = services.try_lock() {
+                                    result.services = Some(svc.clone());
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true,
+                    };
+
+                    if should_put_back {
+                        active_tasks_to_keep.push(AsyncTask::LoadServices { services, logs });
+                    }
+                }
+                AsyncTask::StartService {
+                    service_name,
+                    success,
+                    logs,
+                    message,
+                } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.start_service_completed =
+                                        Some((service_name.clone(), succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true,
+                    };
+
+                    if should_put_back {
+                        active_tasks_to_keep.push(AsyncTask::StartService {
+                            service_name,
+                            success,
+                            logs,
+                            message,
+                        });
+                    }
+                }
+                AsyncTask::StopService {
+                    service_name,
+                    success,
+                    logs,
+                    message,
+                } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.stop_service_completed =
+                                        Some((service_name.clone(), succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true,
+                    };
+
+                    if should_put_back {
+                        active_tasks_to_keep.push(AsyncTask::StopService {
+                            service_name,
+                            success,
+                            logs,
+                            message,
+                        });
+                    }
+                }
+                AsyncTask::RestartService {
+                    service_name,
+                    success,
+                    logs,
+                    message,
+                } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.restart_service_completed =
+                                        Some((service_name.clone(), succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true,
+                    };
+
+                    if should_put_back {
+                        active_tasks_to_keep.push(AsyncTask::RestartService {
+                            service_name,
+                            success,
+                            logs,
+                            message,
+                        });
+                    }
+                }
+                AsyncTask::ExportPackages {
+                    success,
+                    logs,
+                    message,
+                } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.export_packages_completed = Some((succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true,
+                    };
+
+                    if should_put_back {
+                        active_tasks_to_keep.push(AsyncTask::ExportPackages {
+                            success,
+                            logs,
+                            message,
+                        });
+                    }
+                }
+                AsyncTask::ImportPackages {
+                    success,
+                    logs,
+                    message,
+                } => {
+                    let should_put_back = match success.try_lock() {
+                        Ok(success_opt) => {
+                            if let Some(succeeded) = *success_opt {
+                                if let (Ok(log), Ok(msg)) = (logs.try_lock(), message.try_lock()) {
+                                    result.import_packages_completed = Some((succeeded, msg.clone()));
+                                    result.logs.extend(log.clone());
+                                    false
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        Err(_) => true,
+                    };
+
+                    if should_put_back {
+                        active_tasks_to_keep.push(AsyncTask::ImportPackages {
                             success,
                             logs,
                             message,

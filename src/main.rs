@@ -4,8 +4,8 @@ mod infrastructure;
 mod presentation;
 
 use application::UseCaseContainer;
-use domain::repositories::PackageRepository;
-use infrastructure::brew::BrewPackageRepository;
+use domain::repositories::{PackageListRepository, PackageRepository, ServiceRepository};
+use infrastructure::brew::{BrewPackageListRepository, BrewPackageRepository, BrewServiceRepository};
 use presentation::services::log_capture;
 use presentation::ui::BrewstyApp;
 use std::sync::Arc;
@@ -13,8 +13,16 @@ use std::sync::Arc;
 fn main() -> eframe::Result<()> {
     let log_rx = log_capture::init_log_capture();
 
-    let repository: Arc<dyn PackageRepository> = Arc::new(BrewPackageRepository::new());
-    let use_cases = Arc::new(UseCaseContainer::new(repository));
+    let package_repository: Arc<dyn PackageRepository> = Arc::new(BrewPackageRepository::new());
+    let service_repository: Arc<dyn ServiceRepository> = Arc::new(BrewServiceRepository::new());
+    let package_list_repository: Arc<dyn PackageListRepository> =
+        Arc::new(BrewPackageListRepository::new());
+
+    let use_cases = Arc::new(UseCaseContainer::new(
+        package_repository,
+        service_repository,
+        package_list_repository,
+    ));
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

@@ -1,8 +1,8 @@
 use crate::application::UseCaseContainer;
-use crate::domain::entities::{Package, PackageType};
+use crate::domain::entities::{Package, PackageType, Service};
 use crate::presentation::components::{
     CleanupAction, CleanupModal, CleanupType, FilterState, InfoModal, LogLevel, LogManager,
-    MergedPackageList, PackageList, PasswordModal, Tab, TabManager,
+    MergedPackageList, PackageList, PasswordModal, ServiceList, Tab, TabManager,
 };
 use crate::presentation::services::{AsyncExecutor, AsyncTask, AsyncTaskManager};
 use std::sync::mpsc::Receiver;
@@ -20,6 +20,7 @@ pub struct BrewstyApp {
 
     merged_packages: MergedPackageList,
     search_results: PackageList,
+    service_list: ServiceList,
 
     auto_load_version_info: bool,
 
@@ -28,6 +29,7 @@ pub struct BrewstyApp {
     loading_installed: bool,
     loading_outdated: bool,
     loading_search: bool,
+    loading_services: bool,
 
     loading_install: bool,
     loading_uninstall: bool,
@@ -35,6 +37,8 @@ pub struct BrewstyApp {
     loading_update_all: bool,
     loading_clean_cache: bool,
     loading_cleanup_old_versions: bool,
+    loading_export: bool,
+    loading_import: bool,
 
     current_install_package: Option<String>,
     current_uninstall_package: Option<String>,
@@ -43,6 +47,7 @@ pub struct BrewstyApp {
     pending_updates: Vec<Package>,
     pending_operation: Option<PendingOperation>,
     packages_in_operation: std::collections::HashSet<String>,
+    services_in_operation: std::collections::HashSet<String>,
 
     task_manager: AsyncTaskManager,
 
@@ -74,17 +79,21 @@ impl BrewstyApp {
             log_rx,
             merged_packages: MergedPackageList::new(),
             search_results: PackageList::new(),
+            service_list: ServiceList::new(),
             auto_load_version_info: false,
             initialized: false,
             loading_installed: false,
             loading_outdated: false,
             loading_search: false,
+            loading_services: false,
             loading_install: false,
             loading_uninstall: false,
             loading_update: false,
             loading_update_all: false,
             loading_clean_cache: false,
             loading_cleanup_old_versions: false,
+            loading_export: false,
+            loading_import: false,
             current_install_package: None,
             current_uninstall_package: None,
             current_update_package: None,
@@ -92,6 +101,7 @@ impl BrewstyApp {
             pending_updates: Vec::new(),
             pending_operation: None,
             packages_in_operation: std::collections::HashSet::new(),
+            services_in_operation: std::collections::HashSet::new(),
             task_manager: AsyncTaskManager::new(),
             use_cases,
             executor,
@@ -775,6 +785,296 @@ impl BrewstyApp {
         });
     }
 
+    fn load_services(&mut self) {
+        if self.loading_services {
+            return;
+        }
+
+        self.loading_services = true;
+        self.status_message = "Loading services...".to_string();
+        self.log_manager.push("Loading brew services".to_string());
+        tracing::info!("Loading brew services");
+
+        let use_case = Arc::clone(&self.use_cases.list_services);
+
+        let services = Arc::new(Mutex::new(Vec::new()));
+        let logs = Arc::new(Mutex::new(Vec::new()));
+
+        self.task_manager.set_active_task(AsyncTask::LoadServices {
+            services: Arc::clone(&services),
+            logs: Arc::clone(&logs),
+        });
+
+        thread::spawn(move || {
+            let rt = match tokio::runtime::Runtime::new() {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::error!("Failed to create runtime: {}", e);
+                    *logs.lock().unwrap() = vec![format!("Error: {}", e)];
+                    return;
+                }
+            };
+
+            match rt.block_on(async { use_case.execute().await }) {
+                Ok(service_list) => {
+                    let msg = format!("Loaded {} services", service_list.len());
+                    tracing::info!("{}", msg);
+                    *services.lock().unwrap() = service_list;
+                    *logs.lock().unwrap() = vec![msg];
+                }
+                Err(e) => {
+                    let msg = format!("Error loading services: {}", e);
+                    tracing::error!("{}", msg);
+                    *logs.lock().unwrap() = vec![msg];
+                }
+            }
+        });
+    }
+
+    fn handle_start_service(&mut self, service_name: String) {
+        self.services_in_operation.insert(service_name.clone());
+        self.status_message = format!("Starting service {}...", service_name);
+
+        let initial_msg = format!("Starting service: {}", service_name);
+        self.log_manager.push(initial_msg.clone());
+        tracing::info!("{}", initial_msg);
+
+        let success = Arc::new(Mutex::new(None));
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let message = Arc::new(Mutex::new(String::new()));
+
+        self.task_manager.set_active_task(AsyncTask::StartService {
+            service_name: service_name.clone(),
+            success: Arc::clone(&success),
+            logs: Arc::clone(&logs),
+            message: Arc::clone(&message),
+        });
+
+        let use_case = Arc::clone(&self.use_cases.start_service);
+        let service_name_clone = service_name.clone();
+
+        self.executor.execute(async move {
+            match use_case.execute(&service_name_clone).await {
+                Ok(_) => {
+                    let msg = format!("Successfully started service {}", service_name);
+                    *logs.lock().unwrap() = vec![msg.clone()];
+                    *success.lock().unwrap() = Some(true);
+                    *message.lock().unwrap() = msg;
+                }
+                Err(e) => {
+                    let msg = format!("Error starting service {}: {}", service_name, e);
+                    *logs.lock().unwrap() = vec![msg.clone()];
+                    *success.lock().unwrap() = Some(false);
+                    *message.lock().unwrap() = msg;
+                }
+            }
+        });
+    }
+
+    fn handle_stop_service(&mut self, service_name: String) {
+        self.services_in_operation.insert(service_name.clone());
+        self.status_message = format!("Stopping service {}...", service_name);
+
+        let initial_msg = format!("Stopping service: {}", service_name);
+        self.log_manager.push(initial_msg.clone());
+        tracing::info!("{}", initial_msg);
+
+        let success = Arc::new(Mutex::new(None));
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let message = Arc::new(Mutex::new(String::new()));
+
+        self.task_manager.set_active_task(AsyncTask::StopService {
+            service_name: service_name.clone(),
+            success: Arc::clone(&success),
+            logs: Arc::clone(&logs),
+            message: Arc::clone(&message),
+        });
+
+        let use_case = Arc::clone(&self.use_cases.stop_service);
+        let service_name_clone = service_name.clone();
+
+        self.executor.execute(async move {
+            match use_case.execute(&service_name_clone).await {
+                Ok(_) => {
+                    let msg = format!("Successfully stopped service {}", service_name);
+                    *logs.lock().unwrap() = vec![msg.clone()];
+                    *success.lock().unwrap() = Some(true);
+                    *message.lock().unwrap() = msg;
+                }
+                Err(e) => {
+                    let msg = format!("Error stopping service {}: {}", service_name, e);
+                    *logs.lock().unwrap() = vec![msg.clone()];
+                    *success.lock().unwrap() = Some(false);
+                    *message.lock().unwrap() = msg;
+                }
+            }
+        });
+    }
+
+    fn handle_restart_service(&mut self, service_name: String) {
+        self.services_in_operation.insert(service_name.clone());
+        self.status_message = format!("Restarting service {}...", service_name);
+
+        let initial_msg = format!("Restarting service: {}", service_name);
+        self.log_manager.push(initial_msg.clone());
+        tracing::info!("{}", initial_msg);
+
+        let success = Arc::new(Mutex::new(None));
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let message = Arc::new(Mutex::new(String::new()));
+
+        self.task_manager.set_active_task(AsyncTask::RestartService {
+            service_name: service_name.clone(),
+            success: Arc::clone(&success),
+            logs: Arc::clone(&logs),
+            message: Arc::clone(&message),
+        });
+
+        let use_case = Arc::clone(&self.use_cases.restart_service);
+        let service_name_clone = service_name.clone();
+
+        self.executor.execute(async move {
+            match use_case.execute(&service_name_clone).await {
+                Ok(_) => {
+                    let msg = format!("Successfully restarted service {}", service_name);
+                    *logs.lock().unwrap() = vec![msg.clone()];
+                    *success.lock().unwrap() = Some(true);
+                    *message.lock().unwrap() = msg;
+                }
+                Err(e) => {
+                    let msg = format!("Error restarting service {}: {}", service_name, e);
+                    *logs.lock().unwrap() = vec![msg.clone()];
+                    *success.lock().unwrap() = Some(false);
+                    *message.lock().unwrap() = msg;
+                }
+            }
+        });
+    }
+
+    fn handle_export_packages(&mut self) {
+        if self.loading_export {
+            return;
+        }
+
+        // Open file save dialog
+        let file_dialog = rfd::FileDialog::new()
+            .add_filter("JSON files", &["json"])
+            .set_file_name("brewsty_packages.json");
+
+        if let Some(path) = file_dialog.save_file() {
+            self.loading_export = true;
+            self.loading = true;
+            self.status_message = "Exporting packages...".to_string();
+            self.log_manager
+                .push(format!("Exporting packages to: {}", path.display()));
+            tracing::info!("Exporting packages to: {}", path.display());
+
+            let success = Arc::new(Mutex::new(None));
+            let logs = Arc::new(Mutex::new(Vec::new()));
+            let message = Arc::new(Mutex::new(String::new()));
+
+            self.task_manager.set_active_task(AsyncTask::ExportPackages {
+                success: Arc::clone(&success),
+                logs: Arc::clone(&logs),
+                message: Arc::clone(&message),
+            });
+
+            let use_case = Arc::clone(&self.use_cases.export_packages);
+            let executor = self.executor.clone();
+            let path_display = path.display().to_string();
+
+            thread::spawn(move || {
+                let result = executor.execute(async move { use_case.execute(&path).await });
+
+                let mut log_vec = Vec::new();
+                match result {
+                    Ok(package_list) => {
+                        let msg = format!(
+                            "Successfully exported {} packages to {}",
+                            package_list.total_count(),
+                            path_display
+                        );
+                        log_vec.push(msg.clone());
+                        tracing::info!("{}", msg);
+                        *success.lock().unwrap() = Some(true);
+                        *message.lock().unwrap() = "Packages exported successfully".to_string();
+                    }
+                    Err(e) => {
+                        let msg = format!("Error exporting packages: {}", e);
+                        log_vec.push(msg.clone());
+                        tracing::error!("{}", msg);
+                        *success.lock().unwrap() = Some(false);
+                        *message.lock().unwrap() = msg;
+                    }
+                }
+
+                *logs.lock().unwrap() = log_vec;
+            });
+        }
+    }
+
+    fn handle_import_packages(&mut self) {
+        if self.loading_import {
+            return;
+        }
+
+        // Open file open dialog
+        let file_dialog = rfd::FileDialog::new()
+            .add_filter("JSON files", &["json"])
+            .set_file_name("brewsty_packages.json");
+
+        if let Some(path) = file_dialog.pick_file() {
+            self.loading_import = true;
+            self.loading = true;
+            self.status_message = "Importing packages...".to_string();
+            self.log_manager
+                .push(format!("Importing packages from: {}", path.display()));
+            tracing::info!("Importing packages from: {}", path.display());
+
+            let success = Arc::new(Mutex::new(None));
+            let logs = Arc::new(Mutex::new(Vec::new()));
+            let message = Arc::new(Mutex::new(String::new()));
+
+            self.task_manager.set_active_task(AsyncTask::ImportPackages {
+                success: Arc::clone(&success),
+                logs: Arc::clone(&logs),
+                message: Arc::clone(&message),
+            });
+
+            let use_case = Arc::clone(&self.use_cases.import_packages);
+            let executor = self.executor.clone();
+            let path_display = path.display().to_string();
+
+            thread::spawn(move || {
+                let result = executor.execute(async move { use_case.execute(&path).await });
+
+                let mut log_vec = Vec::new();
+                match result {
+                    Ok(_) => {
+                        let msg = format!(
+                            "Successfully imported packages from {}",
+                            path_display
+                        );
+                        log_vec.push(msg.clone());
+                        tracing::info!("{}", msg);
+                        *success.lock().unwrap() = Some(true);
+                        *message.lock().unwrap() =
+                            "Packages imported successfully. Reloading package list...".to_string();
+                    }
+                    Err(e) => {
+                        let msg = format!("Error importing packages: {}", e);
+                        log_vec.push(msg.clone());
+                        tracing::error!("{}", msg);
+                        *success.lock().unwrap() = Some(false);
+                        *message.lock().unwrap() = msg;
+                    }
+                }
+
+                *logs.lock().unwrap() = log_vec;
+            });
+        }
+    }
+
     fn handle_update_all(&mut self) {
         if self.loading_update_all {
             return;
@@ -1289,6 +1589,54 @@ impl BrewstyApp {
             self.load_installed_packages();
         }
 
+        if let Some(services) = result.services {
+            tracing::info!("Got {} services from poll", services.len());
+            self.service_list.update_services(services);
+            self.loading_services = false;
+            self.tab_manager.mark_loaded(Tab::Services);
+            self.status_message = "Services loaded".to_string();
+        }
+
+        if let Some((service_name, success, message)) = result.start_service_completed {
+            self.services_in_operation.remove(&service_name);
+            self.status_message = message;
+            if success {
+                self.load_services();
+            }
+        }
+
+        if let Some((service_name, success, message)) = result.stop_service_completed {
+            self.services_in_operation.remove(&service_name);
+            self.status_message = message;
+            if success {
+                self.load_services();
+            }
+        }
+
+        if let Some((service_name, success, message)) = result.restart_service_completed {
+            self.services_in_operation.remove(&service_name);
+            self.status_message = message;
+            if success {
+                self.load_services();
+            }
+        }
+
+        if let Some((_success, message)) = result.export_packages_completed {
+            self.loading_export = false;
+            self.loading = false;
+            self.status_message = message;
+        }
+
+        if let Some((success, message)) = result.import_packages_completed {
+            self.loading_import = false;
+            self.loading = false;
+            self.status_message = message;
+            if success {
+                // Reload installed packages after successful import
+                self.load_installed_packages();
+            }
+        }
+
         self.log_manager.extend(result.logs);
 
         if self.task_manager.can_load_more_package_info()
@@ -1379,6 +1727,15 @@ impl eframe::App for BrewstyApp {
                     .clicked()
                 {
                     self.tab_manager.switch_to(Tab::SearchInstall);
+                }
+                if ui
+                    .selectable_label(self.tab_manager.is_current(Tab::Services), "Services")
+                    .clicked()
+                {
+                    self.tab_manager.switch_to(Tab::Services);
+                    if !self.tab_manager.is_loaded(Tab::Services) {
+                        self.load_services();
+                    }
                 }
                 if ui
                     .selectable_label(self.tab_manager.is_current(Tab::Settings), "Settings")
@@ -1586,6 +1943,44 @@ impl eframe::App for BrewstyApp {
                     }
                 }
 
+                Tab::Services => {
+                    ui.horizontal(|ui| {
+                        ui.label("Brew Services");
+                        ui.separator();
+                        if ui.button("Refresh").clicked() {
+                            self.load_services();
+                        }
+                    });
+
+                    ui.separator();
+
+                    if self.loading_services {
+                        self.show_loader(ui, "Loading services...");
+                    } else {
+                        let mut start_action = None;
+                        let mut stop_action = None;
+                        let mut restart_action = None;
+
+                        self.service_list.show(
+                            ui,
+                            &mut start_action,
+                            &mut stop_action,
+                            &mut restart_action,
+                            &self.services_in_operation,
+                        );
+
+                        if let Some(service_name) = start_action {
+                            self.handle_start_service(service_name);
+                        }
+                        if let Some(service_name) = stop_action {
+                            self.handle_stop_service(service_name);
+                        }
+                        if let Some(service_name) = restart_action {
+                            self.handle_restart_service(service_name);
+                        }
+                    }
+                }
+
                 Tab::Settings => {
                     ui.heading("Settings & Maintenance");
                     ui.separator();
@@ -1635,6 +2030,29 @@ impl eframe::App for BrewstyApp {
                             self.handle_update_all();
                         }
                         ui.label("Update all installed packages");
+                    });
+
+                    ui.separator();
+                    ui.heading("Package List Management");
+
+                    ui.vertical_centered(|ui| {
+                        if ui
+                            .add_enabled(!self.loading_export, egui::Button::new("Export Packages"))
+                            .clicked()
+                        {
+                            self.handle_export_packages();
+                        }
+                        ui.label("Export installed packages to JSON");
+
+                        ui.add_space(10.0);
+
+                        if ui
+                            .add_enabled(!self.loading_import, egui::Button::new("Import Packages"))
+                            .clicked()
+                        {
+                            self.handle_import_packages();
+                        }
+                        ui.label("Import and install packages from JSON");
                     });
                 }
 

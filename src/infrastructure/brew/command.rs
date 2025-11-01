@@ -299,4 +299,63 @@ impl BrewCommand {
 
         Ok(BrewOutput { stdout, stderr })
     }
+
+    // Services management
+    pub fn list_services() -> Result<String> {
+        Self::execute_brew(&["services", "list"])
+    }
+
+    pub fn start_service(name: &str) -> Result<BrewOutput> {
+        let output = Command::new("brew")
+            .args(["services", "start", name])
+            .output()?;
+
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+
+        if !output.status.success() {
+            return Err(anyhow!("Failed to start service: {}", stderr));
+        }
+
+        Ok(BrewOutput { stdout, stderr })
+    }
+
+    pub fn stop_service(name: &str) -> Result<BrewOutput> {
+        let output = Command::new("brew")
+            .args(["services", "stop", name])
+            .output()?;
+
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+
+        if !output.status.success() {
+            return Err(anyhow!("Failed to stop service: {}", stderr));
+        }
+
+        Ok(BrewOutput { stdout, stderr })
+    }
+
+    pub fn restart_service(name: &str) -> Result<BrewOutput> {
+        let output = Command::new("brew")
+            .args(["services", "restart", name])
+            .output()?;
+
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+
+        if !output.status.success() {
+            return Err(anyhow!("Failed to restart service: {}", stderr));
+        }
+
+        Ok(BrewOutput { stdout, stderr })
+    }
+
+    // Export package list with versions
+    pub fn export_installed() -> Result<String> {
+        // Get list of formulae and casks with versions
+        let formulae = Self::execute_brew(&["list", "--formula", "--versions"])?;
+        let casks = Self::execute_brew(&["list", "--cask", "--versions"])?;
+        
+        Ok(format!("FORMULAE\n{}\nCASKS\n{}", formulae, casks))
+    }
 }

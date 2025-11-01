@@ -6,6 +6,7 @@ pub mod merged_package_list;
 pub mod package_list;
 pub mod password_modal;
 pub mod selection_state;
+pub mod service_list;
 pub mod tab_manager;
 
 pub use cleanup_modal::{CleanupAction, CleanupModal, CleanupType};
@@ -16,4 +17,5 @@ pub use merged_package_list::MergedPackageList;
 pub use package_list::PackageList;
 pub use password_modal::PasswordModal;
 pub use selection_state::SelectionState;
+pub use service_list::ServiceList;
 pub use tab_manager::{Tab, TabManager};

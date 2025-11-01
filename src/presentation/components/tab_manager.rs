@@ -4,6 +4,7 @@ use std::collections::HashMap;
 pub enum Tab {
     Installed,
     SearchInstall,
+    Services,
     Settings,
     Log,
 }
@@ -28,6 +29,7 @@ impl TabManager {
         let mut tab_states = HashMap::new();
         tab_states.insert(Tab::Installed, TabState::new());
         tab_states.insert(Tab::SearchInstall, TabState::new());
+        tab_states.insert(Tab::Services, TabState::new());
         tab_states.insert(Tab::Settings, TabState::new());
         tab_states.insert(Tab::Log, TabState::new());
 
