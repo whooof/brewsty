@@ -384,5 +384,29 @@ impl MergedPackageList {
                         });
                 }
             });
+
+        if self.outdated_selection.has_selection() {
+            let selected_count = self.outdated_selection.get_selected().len();
+            let text = format!("Update Selected ({})", selected_count);
+
+            egui::Area::new("floating_update_button".into())
+                .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-20.0, -20.0))
+                .order(egui::Order::Foreground)
+                .show(ui.ctx(), |ui| {
+                    let button = egui::Button::new(
+                        RichText::new(text)
+                            .color(Color32::WHITE)
+                            .size(16.0)
+                            .strong(),
+                    )
+                    .fill(Color32::from_rgb(0, 122, 255))
+                    .rounding(8.0)
+                    .min_size(egui::vec2(120.0, 40.0));
+
+                    if ui.add(button).clicked() {
+                        *on_update_selected = Some(self.outdated_selection.get_selected());
+                    }
+                });
+        }
     }
 }
