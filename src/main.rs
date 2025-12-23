@@ -5,19 +5,18 @@ mod presentation;
 
 use application::UseCaseContainer;
 use domain::repositories::{PackageListRepository, PackageRepository, ServiceRepository};
-use infrastructure::brew::{BrewPackageListRepository, BrewPackageRepository, BrewServiceRepository};
+use infrastructure::brew::{
+    BrewPackageListRepository, BrewPackageRepository, BrewServiceRepository,
+};
 use presentation::services::log_capture;
 use presentation::ui::BrewstyApp;
 use std::sync::Arc;
 
 fn main() -> eframe::Result<()> {
-    // Initialize global runtime
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .expect("Failed to create Tokio runtime");
-    
-    // Enter the runtime context to ensure any async initialization works if needed
     let _guard = runtime.enter();
 
     let log_rx = log_capture::init_log_capture();

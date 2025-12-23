@@ -389,11 +389,9 @@ impl BrewstyApp {
             .push(format!("Queued {} packages for sequential update", count));
         tracing::info!("Queued {} packages for sequential update", count);
 
-        // Queue all packages for sequential update
         self.pending_updates = packages_to_update;
         self.loading_update_all = true;
 
-        // Start updating the first package
         self.process_next_pending_update();
     }
 
@@ -1121,7 +1119,6 @@ impl BrewstyApp {
             return;
         }
 
-        // Open file save dialog
         let file_dialog = rfd::FileDialog::new()
             .add_filter("JSON files", &["json"])
             .set_file_name("brewsty_packages.json");
@@ -1194,7 +1191,6 @@ impl BrewstyApp {
             return;
         }
 
-        // Open file open dialog
         let file_dialog = rfd::FileDialog::new()
             .add_filter("JSON files", &["json"])
             .set_file_name("brewsty_packages.json");
@@ -1667,17 +1663,15 @@ impl BrewstyApp {
                         pkg.installed = true;
                         self.search_results.update_package(pkg);
                     }
-                    // Locally update installed packages instead of reloading
+
                     self.merged_packages.mark_package_updated(&pkg_name);
                     self.merged_packages
                         .remove_from_outdated_selection_by_name(&pkg_name);
                 }
                 self.current_install_package = None;
             } else {
-                // Check if this is a password error
                 if self.is_password_error(&message) {
                     if let Some(pkg_name) = &installed_pkg_name {
-                        // Try to get the package from search results to retry with password
                         if let Some(pkg) = self.search_results.get_package(pkg_name) {
                             self.pending_operation = Some(PendingOperation::Install(pkg));
                             self.password_modal.show(format!("Install {}", pkg_name));
@@ -1700,15 +1694,12 @@ impl BrewstyApp {
 
             if success {
                 if let Some(pkg) = self.current_uninstall_package.as_ref() {
-                    // Locally remove uninstalled package instead of reloading
                     self.merged_packages.remove_installed_package(pkg);
                 }
                 self.current_uninstall_package = None;
             } else {
-                // Check if this is a password error
                 if self.is_password_error(&message) {
                     if let Some(pkg_name) = &uninstall_pkg_name {
-                        // Try to get the package from merged packages to retry with password
                         if let Some(pkg) = self.merged_packages.get_package(pkg_name) {
                             self.pending_operation = Some(PendingOperation::Uninstall(pkg));
                             self.password_modal.show(format!("Uninstall {}", pkg_name));
@@ -1731,19 +1722,16 @@ impl BrewstyApp {
 
             if success {
                 if let Some(pkg_name) = pkg {
-                    // Locally move package from outdated to installed instead of reloading
                     self.merged_packages.mark_package_updated(&pkg_name);
                     self.merged_packages
                         .remove_from_outdated_selection_by_name(&pkg_name);
                 }
             }
 
-            // If we're in the middle of updating selected packages, process the next one
             if self.loading_update_all && !self.pending_updates.is_empty() {
                 self.process_next_pending_update();
                 self.loading_update = true;
             } else if self.loading_update_all && self.pending_updates.is_empty() {
-                // All updates are done
                 self.loading_update_all = false;
                 self.status_message = "Finished updating all packages".to_string();
                 self.log_manager
@@ -1759,7 +1747,6 @@ impl BrewstyApp {
             self.status_message = message;
 
             if success {
-                // Locally update all packages that were in operation instead of reloading
                 for pkg_name in self.packages_in_operation.iter() {
                     self.merged_packages.mark_package_updated(pkg_name);
                     self.merged_packages

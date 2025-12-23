@@ -1,33 +1,10 @@
 use crate::domain::entities::ThemeMode;
 use egui::{Color32, Context, FontFamily, FontId, Rounding, Stroke, TextStyle, Visuals};
 
+/// Configures egui style with custom fonts, spacing, and theme-aware colors.
 pub fn configure_style(ctx: &Context, theme: ThemeMode) {
-    // 1. Configure Fonts
-    // egui's default fonts include basic emoji support via the bundled fonts.
-    // We avoid loading system-specific fonts to ensure cross-platform builds work.
-
-    // Install custom fonts or prioritize system fonts
-    // Mac specific: prioritize San Francisco if possible, but egui defaults are limited.
-    // We'll insert a "best effort" nice font configuration.
-    // Actually, egui's default fonts are "Hack" for monospace and "Ubuntu-Light" for proportional.
-    // We can try to rely on the OS fonts if we had a font loader, but for now let's just
-    // stick to standard egui fonts but configured larger.
-
-    // Let's just create larger styles for now.
-
-    // We use the default fonts but we will reconfigure the text styles sizes.
-    // If we wanted to load a font file we would need the bytes.
-    // For a "fresh" look, standard egui fonts are a bit "gamey/tooly".
-    // Since I can't easily curl a font file right now without internet access or ensuring it exists,
-    // I will focus on sizing and visual settings which make a huge difference.
-
-    // However, if the user is on Mac, we might want to try to use the system font if we can load it.
-    // But safely, let's stick to tuning sizes.
-
-    // Scale up everything a bit
     let mut style = (*ctx.style()).clone();
 
-    // Text Styles
     style.text_styles = [
         (
             TextStyle::Small,
@@ -49,29 +26,19 @@ pub fn configure_style(ctx: &Context, theme: ThemeMode) {
     ]
     .into();
 
-    // Spacing
-    style.spacing.item_spacing = egui::vec2(10.0, 10.0); // More breathing room
+    style.spacing.item_spacing = egui::vec2(10.0, 10.0);
     style.spacing.window_margin = egui::Margin::same(12.0);
-    style.spacing.button_padding = egui::vec2(12.0, 8.0); // Larger buttons
+    style.spacing.button_padding = egui::vec2(12.0, 8.0);
     style.spacing.indent = 24.0;
-    style.spacing.interact_size = egui::vec2(60.0, 30.0); // Larger interaction areas
+    style.spacing.interact_size = egui::vec2(60.0, 30.0);
 
-    // Visuals
     let mut visuals = match theme {
-        ThemeMode::System => {
-            // Basic heuristic, though egui doesn't auto-detect system theme perfectly without invalidation
-            // Default to Dark for "Premium" feel if system detection is tricky,
-            // but let's trust standard egui behavior or just default to Dark for now as it often looks "fresher".
-            // Actually, let's respect the passed theme properly.
-            // If system, we might need to check system config if possible,
-            // but for now let's fallback to Dark as the "default" cool look.
-            Visuals::dark()
-        }
+        ThemeMode::System => Visuals::dark(), // Default to dark for "System"
         ThemeMode::Light => Visuals::light(),
         ThemeMode::Dark => Visuals::dark(),
     };
 
-    // Global widget rounding
+    // Rounded corners
     visuals.widgets.noninteractive.rounding = Rounding::same(8.0);
     visuals.widgets.inactive.rounding = Rounding::same(8.0);
     visuals.widgets.hovered.rounding = Rounding::same(8.0);
@@ -80,31 +47,22 @@ pub fn configure_style(ctx: &Context, theme: ThemeMode) {
     visuals.window_rounding = Rounding::same(12.0);
     visuals.menu_rounding = Rounding::same(8.0);
 
-    // Modernize colors for Dark Mode
     if visuals.dark_mode {
-        visuals.widgets.noninteractive.bg_fill = Color32::from_gray(32); // Slightly lighter background for panels
-        visuals.window_fill = Color32::from_gray(20); // Darker window background
+        visuals.widgets.noninteractive.bg_fill = Color32::from_gray(32);
+        visuals.window_fill = Color32::from_gray(20);
         visuals.panel_fill = Color32::from_gray(28);
-
-        // Button Styling
         visuals.widgets.inactive.weak_bg_fill = Color32::from_gray(45);
         visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_gray(60));
-
         visuals.widgets.hovered.weak_bg_fill = Color32::from_gray(60);
         visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_gray(100));
-
-        visuals.selection.bg_fill = Color32::from_rgb(0, 122, 255); // System Blue
+        visuals.selection.bg_fill = Color32::from_rgb(0, 122, 255);
         visuals.hyperlink_color = Color32::from_rgb(58, 150, 255);
     } else {
-        // Modernize colors for Light Mode
         visuals.widgets.noninteractive.bg_fill = Color32::from_gray(248);
         visuals.window_fill = Color32::WHITE;
         visuals.panel_fill = Color32::from_gray(242);
-
-        // Button Styling
         visuals.widgets.inactive.weak_bg_fill = Color32::from_gray(230);
         visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_gray(200));
-
         visuals.selection.bg_fill = Color32::from_rgb(0, 122, 255);
     }
 

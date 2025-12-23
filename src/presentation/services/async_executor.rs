@@ -16,8 +16,7 @@ impl AsyncExecutor {
         F: Future<Output = T> + Send,
         T: Send + 'static,
     {
-        // For synchronous execution blocking on a future (be careful not to block UI thread main loop too long)
-        // Ideally we shouldn't use this in the main UI thread for long tasks
+        // Warning: blocks the calling thread. Avoid for long tasks on UI thread.
         tokio::task::block_in_place(|| self.handle.block_on(future))
     }
 
