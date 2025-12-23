@@ -11,6 +11,15 @@ use presentation::ui::BrewstyApp;
 use std::sync::Arc;
 
 fn main() -> eframe::Result<()> {
+    // Initialize global runtime
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create Tokio runtime");
+    
+    // Enter the runtime context to ensure any async initialization works if needed
+    let _guard = runtime.enter();
+
     let log_rx = log_capture::init_log_capture();
 
     let package_repository: Arc<dyn PackageRepository> = Arc::new(BrewPackageRepository::new());
@@ -31,9 +40,12 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
 
+    use presentation::services::AsyncExecutor;
+    let executor = AsyncExecutor::new(runtime.handle().clone());
+
     eframe::run_native(
         "Brewsty - Homebrew Package Manager",
         options,
-        Box::new(|_cc| Ok(Box::new(BrewstyApp::new(use_cases, log_rx)))),
+        Box::new(|_cc| Ok(Box::new(BrewstyApp::new(use_cases, log_rx, executor)))),
     )
 }

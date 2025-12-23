@@ -1,19 +1,23 @@
 use crate::application::UseCaseContainer;
-use crate::domain::entities::{Package, PackageType, AppConfig, ThemeMode};
+use crate::domain::entities::{AppConfig, Package, PackageType};
+use crate::infrastructure::config_repository::ConfigRepository;
 use crate::presentation::components::{
-    CleanupAction, CleanupModal, CleanupType, FilterState, InfoModal, LogLevel, LogManager,
+    CleanupAction, CleanupModal, CleanupType, FilterState, InfoModal, LogManager,
     MergedPackageList, PackageList, PasswordModal, ServiceList, Tab, TabManager,
 };
-use crate::infrastructure::config_repository::ConfigRepository;
 use crate::presentation::services::{AsyncExecutor, AsyncTask, AsyncTaskManager};
+use crate::presentation::ui::tabs::installed::{InstalledAction, InstalledTab};
+use crate::presentation::ui::tabs::log::{LogAction, LogTab};
+use crate::presentation::ui::tabs::search::{SearchAction, SearchTab};
+use crate::presentation::ui::tabs::services::{ServiceAction, ServicesTab};
+use crate::presentation::ui::tabs::settings::{SettingsAction, SettingsTab};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
-use std::thread;
 
 pub struct BrewstyApp {
     tab_manager: TabManager,
     filter_state: FilterState,
-    
+
     config: AppConfig,
     config_repo: ConfigRepository,
 
@@ -70,9 +74,11 @@ enum PendingOperation {
 }
 
 impl BrewstyApp {
-    pub fn new(use_cases: Arc<UseCaseContainer>, log_rx: Receiver<String>) -> Self {
-        let executor = AsyncExecutor::new();
-        
+    pub fn new(
+        use_cases: Arc<UseCaseContainer>,
+        log_rx: Receiver<String>,
+        executor: AsyncExecutor,
+    ) -> Self {
         let config_repo = ConfigRepository::new();
         let config = config_repo.load().unwrap_or_else(|e| {
             tracing::error!("Failed to load config: {}", e);
@@ -82,7 +88,7 @@ impl BrewstyApp {
         Self {
             tab_manager: TabManager::new(),
             filter_state: FilterState::new(),
-            
+
             config: config.clone(),
             config_repo,
 
@@ -149,12 +155,14 @@ impl BrewstyApp {
         } else {
             "Loading installed packages...".to_string()
         };
-        
+
         if include_outdated {
-            self.log_manager.push("Loading installed and outdated packages (formulae and casks)".to_string());
+            self.log_manager
+                .push("Loading installed and outdated packages (formulae and casks)".to_string());
             tracing::info!("Loading installed and outdated packages (formulae and casks)");
         } else {
-            self.log_manager.push("Loading installed packages (formulae and casks)".to_string());
+            self.log_manager
+                .push("Loading installed packages (formulae and casks)".to_string());
             tracing::info!("Loading installed packages (formulae and casks)");
         }
 
@@ -178,185 +186,182 @@ impl BrewstyApp {
             });
         }
 
-        thread::spawn(move || {
-            tracing::trace!("THREAD STARTED: load_installed_packages");
-            if let Err(e) =
-                (|| -> anyhow::Result<()> {
-                    tracing::trace!("THREAD: about to create runtime");
-                    let rt = tokio::runtime::Runtime::new()?;
-                    tracing::trace!("THREAD: runtime created");
+        self.executor.spawn(async move {
+            tracing::trace!("TASK STARTED: load_installed_packages");
+            let task_result = async {
+                tracing::debug!("Starting to load installed packages");
 
-                    tracing::debug!("Starting to load installed packages");
+                tracing::trace!("TASK: about to execute installed formulae");
+                let installed_formulae_result =
+                    use_case_installed.execute(PackageType::Formula).await;
 
-                    tracing::trace!("THREAD: about to execute installed formulae");
-                    let installed_formulae_result = rt
-                        .block_on(async { use_case_installed.execute(PackageType::Formula).await });
+                tracing::debug!(
+                    "Installed formulae result: {:?}",
+                    installed_formulae_result
+                        .as_ref()
+                        .map(|p| p.len())
+                        .map_err(|e| e.to_string())
+                );
+
+                tracing::trace!("TASK: about to execute installed casks");
+                let installed_casks_result = use_case_installed.execute(PackageType::Cask).await;
+
+                tracing::debug!(
+                    "Installed casks result: {:?}",
+                    installed_casks_result
+                        .as_ref()
+                        .map(|p| p.len())
+                        .map_err(|e| e.to_string())
+                );
+
+                let mut outdated_formulae_result: anyhow::Result<Vec<Package>> = Ok(Vec::new());
+                let mut outdated_casks_result: anyhow::Result<Vec<Package>> = Ok(Vec::new());
+
+                if include_outdated {
+                    tracing::trace!("TASK: about to execute outdated formulae");
+                    outdated_formulae_result =
+                        use_case_outdated.execute(PackageType::Formula).await;
 
                     tracing::debug!(
-                        "Installed formulae result: {:?}",
-                        installed_formulae_result
+                        "Outdated formulae result: {:?}",
+                        outdated_formulae_result
                             .as_ref()
                             .map(|p| p.len())
                             .map_err(|e| e.to_string())
                     );
 
-                    tracing::trace!("THREAD: about to execute installed casks");
-                    let installed_casks_result =
-                        rt.block_on(async { use_case_installed.execute(PackageType::Cask).await });
+                    tracing::trace!("TASK: about to execute outdated casks");
+                    outdated_casks_result = use_case_outdated.execute(PackageType::Cask).await;
 
                     tracing::debug!(
-                        "Installed casks result: {:?}",
-                        installed_casks_result
+                        "Outdated casks result: {:?}",
+                        outdated_casks_result
                             .as_ref()
                             .map(|p| p.len())
                             .map_err(|e| e.to_string())
                     );
+                }
 
-                    let mut outdated_formulae_result: anyhow::Result<Vec<Package>> = Ok(Vec::new());
-                    let mut outdated_casks_result: anyhow::Result<Vec<Package>> = Ok(Vec::new());
+                let mut installed = Vec::new();
+                let mut outdated = Vec::new();
+                let mut installed_logs_vec = Vec::new();
+                let mut outdated_logs_vec = Vec::new();
 
-                    if include_outdated {
-                         tracing::trace!("THREAD: about to execute outdated formulae");
-                         outdated_formulae_result = rt
-                             .block_on(async { use_case_outdated.execute(PackageType::Formula).await });
-    
-                         tracing::debug!(
-                             "Outdated formulae result: {:?}",
-                             outdated_formulae_result
-                                 .as_ref()
-                                 .map(|p| p.len())
-                                 .map_err(|e| e.to_string())
-                         );
-    
-                         tracing::trace!("THREAD: about to execute outdated casks");
-                         outdated_casks_result =
-                             rt.block_on(async { use_case_outdated.execute(PackageType::Cask).await });
-    
-                         tracing::debug!(
-                             "Outdated casks result: {:?}",
-                             outdated_casks_result
-                                 .as_ref()
-                                 .map(|p| p.len())
-                                 .map_err(|e| e.to_string())
-                         );
+                match installed_formulae_result {
+                    Ok(pkgs) => {
+                        let msg = format!("Loaded {} installed formulae", pkgs.len());
+                        installed_logs_vec.push(msg.clone());
+                        tracing::info!("{}", msg);
+                        installed.extend(pkgs);
                     }
+                    Err(e) => {
+                        let msg = format!("Error loading installed formulae: {}", e);
+                        installed_logs_vec.push(msg.clone());
+                        tracing::error!("{}", msg);
+                    }
+                }
 
-                    let mut installed = Vec::new();
-                    let mut outdated = Vec::new();
-                    let mut installed_logs = Vec::new();
-                    let mut outdated_logs = Vec::new();
+                match installed_casks_result {
+                    Ok(pkgs) => {
+                        let msg = format!("Loaded {} installed casks", pkgs.len());
+                        installed_logs_vec.push(msg.clone());
+                        tracing::info!("{}", msg);
+                        installed.extend(pkgs);
+                    }
+                    Err(e) => {
+                        let msg = format!("Error loading installed casks: {}", e);
+                        installed_logs_vec.push(msg.clone());
+                        tracing::error!("{}", msg);
+                    }
+                }
 
-                    match installed_formulae_result {
+                if include_outdated {
+                    match outdated_formulae_result {
                         Ok(pkgs) => {
-                            let msg = format!("Loaded {} installed formulae", pkgs.len());
-                            installed_logs.push(msg.clone());
+                            let msg = format!("Loaded {} outdated formulae", pkgs.len());
+                            outdated_logs_vec.push(msg.clone());
                             tracing::info!("{}", msg);
-                            installed.extend(pkgs);
+                            outdated.extend(pkgs);
                         }
                         Err(e) => {
-                            let msg = format!("Error loading installed formulae: {}", e);
-                            installed_logs.push(msg.clone());
+                            let msg = format!("Error loading outdated formulae: {}", e);
+                            outdated_logs_vec.push(msg.clone());
                             tracing::error!("{}", msg);
                         }
                     }
 
-                    match installed_casks_result {
+                    match outdated_casks_result {
                         Ok(pkgs) => {
-                            let msg = format!("Loaded {} installed casks", pkgs.len());
-                            installed_logs.push(msg.clone());
+                            let msg = format!("Loaded {} outdated casks", pkgs.len());
+                            outdated_logs_vec.push(msg.clone());
                             tracing::info!("{}", msg);
-                            installed.extend(pkgs);
+                            outdated.extend(pkgs);
                         }
                         Err(e) => {
-                            let msg = format!("Error loading installed casks: {}", e);
-                            installed_logs.push(msg.clone());
+                            let msg = format!("Error loading outdated casks: {}", e);
+                            outdated_logs_vec.push(msg.clone());
                             tracing::error!("{}", msg);
                         }
                     }
+                }
 
-                    if include_outdated {
-                        match outdated_formulae_result {
-                            Ok(pkgs) => {
-                                let msg = format!("Loaded {} outdated formulae", pkgs.len());
-                                outdated_logs.push(msg.clone());
-                                tracing::info!("{}", msg);
-                                outdated.extend(pkgs);
-                            }
-                            Err(e) => {
-                                let msg = format!("Error loading outdated formulae: {}", e);
-                                outdated_logs.push(msg.clone());
-                                tracing::error!("{}", msg);
-                            }
-                        }
+                tracing::debug!(
+                    "About to write {} installed packages to mutex",
+                    installed.len()
+                );
+                *installed_packages
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("Failed to lock installed packages: {}", e))? =
+                    installed;
 
-                        match outdated_casks_result {
-                            Ok(pkgs) => {
-                                let msg = format!("Loaded {} outdated casks", pkgs.len());
-                                outdated_logs.push(msg.clone());
-                                tracing::info!("{}", msg);
-                                outdated.extend(pkgs);
-                            }
-                            Err(e) => {
-                                let msg = format!("Error loading outdated casks: {}", e);
-                                outdated_logs.push(msg.clone());
-                                tracing::error!("{}", msg);
-                            }
-                        }
-                    }
+                tracing::debug!(
+                    "About to write {} outdated packages to mutex",
+                    outdated.len()
+                );
+                *outdated_packages
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("Failed to lock outdated packages: {}", e))? =
+                    outdated;
 
-                    tracing::debug!(
-                        "About to write {} installed packages to mutex",
-                        installed.len()
-                    );
-                    *installed_packages.lock().map_err(|e| {
-                        anyhow::anyhow!("Failed to lock installed packages: {}", e)
-                    })? = installed;
+                installed_logs_vec.push("Finished loading installed packages".to_string());
+                if include_outdated {
+                    outdated_logs_vec.push("Finished loading outdated packages".to_string());
+                    tracing::info!("Finished loading installed and outdated packages");
+                } else {
+                    tracing::info!("Finished loading installed packages");
+                }
 
-                    tracing::debug!(
-                        "About to write {} outdated packages to mutex",
-                        outdated.len()
-                    );
-                    *outdated_packages.lock().map_err(|e| {
-                        anyhow::anyhow!("Failed to lock outdated packages: {}", e)
-                    })? = outdated;
+                tracing::debug!(
+                    "About to lock installed logs mutex with {} log entries",
+                    installed_logs_vec.len()
+                );
+                *installed_log
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("Failed to lock installed logs: {}", e))? =
+                    installed_logs_vec;
 
-                    installed_logs.push("Finished loading installed packages".to_string());
-                    if include_outdated {
-                        outdated_logs.push("Finished loading outdated packages".to_string());
-                        tracing::info!("Finished loading installed and outdated packages");
-                    } else {
-                        tracing::info!("Finished loading installed packages");
-                    }
+                tracing::debug!(
+                    "About to lock outdated logs mutex with {} log entries",
+                    outdated_logs_vec.len()
+                );
+                *outdated_log
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("Failed to lock outdated logs: {}", e))? =
+                    outdated_logs_vec;
 
-                    tracing::debug!(
-                        "About to lock installed logs mutex with {} log entries",
-                        installed_logs.len()
-                    );
-                    *installed_log
-                        .lock()
-                        .map_err(|e| anyhow::anyhow!("Failed to lock installed logs: {}", e))? =
-                        installed_logs;
+                tracing::debug!("Successfully updated mutexes");
 
-                    tracing::debug!(
-                        "About to lock outdated logs mutex with {} log entries",
-                        outdated_logs.len()
-                    );
-                    *outdated_log
-                        .lock()
-                        .map_err(|e| anyhow::anyhow!("Failed to lock outdated logs: {}", e))? =
-                        outdated_logs;
+                Ok::<(), anyhow::Error>(())
+            }
+            .await;
 
-                    tracing::debug!("Successfully updated mutexes");
-
-                    Ok(())
-                })()
-            {
-                tracing::error!("Error in load_installed_packages thread: {}", e);
+            if let Err(e) = task_result {
+                tracing::error!("Error in load_installed_packages task: {}", e);
                 if let Ok(mut logs) = installed_log.lock() {
-                    logs.push(format!("Thread error: {}", e));
+                    logs.push(format!("Task error: {}", e));
                 }
             }
-            tracing::trace!("THREAD ENDED: load_installed_packages");
+            tracing::trace!("TASK ENDED: load_installed_packages");
         });
     }
 
@@ -433,8 +438,6 @@ impl BrewstyApp {
             || error_msg.contains("sudo: a password is required")
     }
 
-
-
     fn retry_with_password(&mut self, password: &str) {
         if let Some(operation) = self.pending_operation.take() {
             match operation {
@@ -476,10 +479,9 @@ impl BrewstyApp {
         });
 
         let use_case = Arc::clone(&self.use_cases.install);
-        let executor = self.executor.clone();
 
-        thread::spawn(move || {
-            let result = executor.execute(async move { use_case.execute(package).await });
+        self.executor.spawn(async move {
+            let result = use_case.execute(package).await;
 
             let mut log_vec = Vec::new();
             match result {
@@ -487,20 +489,30 @@ impl BrewstyApp {
                     let msg = format!("Successfully installed {}", package_name);
                     log_vec.push(msg.clone());
                     tracing::info!("{}", msg);
-                    *success.lock().unwrap() = Some(true);
-                    *message.lock().unwrap() = format!("{} installed successfully", package_name);
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(true);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = format!("{} installed successfully", package_name);
+                    }
                 }
                 Err(e) => {
                     let error_str = e.to_string();
                     let msg = format!("Error installing {}: {}", package_name, error_str);
                     log_vec.push(msg.clone());
                     tracing::error!("{}", msg);
-                    *success.lock().unwrap() = Some(false);
-                    *message.lock().unwrap() = error_str;
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(false);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = error_str;
+                    }
                 }
             }
 
-            *logs.lock().unwrap() = log_vec;
+            if let Ok(mut logs_guard) = logs.lock() {
+                *logs_guard = log_vec;
+            }
         });
     }
 
@@ -536,29 +548,50 @@ impl BrewstyApp {
         let name = package_name.clone();
         let pkg_type = package_type.clone();
 
-        thread::spawn(move || {
+        self.executor.spawn(async move {
             use crate::infrastructure::brew::command::BrewCommand;
 
             let mut log_vec = Vec::new();
-            match BrewCommand::install_package_with_password(&name, pkg_type, &password) {
+
+            let brew_result = tokio::task::spawn_blocking(move || {
+                BrewCommand::install_package_with_password(&name, pkg_type, &password)
+            })
+            .await;
+
+            let result = match brew_result {
+                Ok(inner) => inner,
+                Err(e) => Err(anyhow::anyhow!("Task join error: {}", e)),
+            };
+
+            match result {
                 Ok(_) => {
                     let msg = format!("Successfully installed {}", package_name);
                     log_vec.push(msg.clone());
                     tracing::info!("{}", msg);
-                    *success.lock().unwrap() = Some(true);
-                    *message.lock().unwrap() = format!("{} installed successfully", package_name);
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(true);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = format!("{} installed successfully", package_name);
+                    }
                 }
                 Err(e) => {
                     let error_str = e.to_string();
                     let msg = format!("Error installing {}: {}", package_name, error_str);
                     log_vec.push(msg.clone());
                     tracing::error!("{}", msg);
-                    *success.lock().unwrap() = Some(false);
-                    *message.lock().unwrap() = error_str;
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(false);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = error_str;
+                    }
                 }
             }
 
-            *logs.lock().unwrap() = log_vec;
+            if let Ok(mut logs_guard) = logs.lock() {
+                *logs_guard = log_vec;
+            }
         });
     }
 
@@ -593,10 +626,9 @@ impl BrewstyApp {
         });
 
         let use_case = Arc::clone(&self.use_cases.uninstall);
-        let executor = self.executor.clone();
 
-        thread::spawn(move || {
-            let result = executor.execute(async move { use_case.execute(package).await });
+        self.executor.spawn(async move {
+            let result = use_case.execute(package).await;
 
             let mut log_vec = Vec::new();
             match result {
@@ -604,20 +636,30 @@ impl BrewstyApp {
                     let msg = format!("Successfully uninstalled {}", package_name);
                     log_vec.push(msg.clone());
                     tracing::info!("{}", msg);
-                    *success.lock().unwrap() = Some(true);
-                    *message.lock().unwrap() = format!("{} uninstalled successfully", package_name);
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(true);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = format!("{} uninstalled successfully", package_name);
+                    }
                 }
                 Err(e) => {
                     let error_str = e.to_string();
                     let msg = format!("Error uninstalling {}: {}", package_name, error_str);
                     log_vec.push(msg.clone());
                     tracing::error!("{}", msg);
-                    *success.lock().unwrap() = Some(false);
-                    *message.lock().unwrap() = error_str;
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(false);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = error_str;
+                    }
                 }
             }
 
-            *logs.lock().unwrap() = log_vec;
+            if let Ok(mut logs_guard) = logs.lock() {
+                *logs_guard = log_vec;
+            }
         });
     }
 
@@ -653,29 +695,50 @@ impl BrewstyApp {
         let name = package_name.clone();
         let pkg_type = package_type.clone();
 
-        thread::spawn(move || {
+        self.executor.spawn(async move {
             use crate::infrastructure::brew::command::BrewCommand;
 
             let mut log_vec = Vec::new();
-            match BrewCommand::uninstall_package_with_password(&name, pkg_type, &password) {
+
+            let brew_result = tokio::task::spawn_blocking(move || {
+                BrewCommand::uninstall_package_with_password(&name, pkg_type, &password)
+            })
+            .await;
+
+            let result = match brew_result {
+                Ok(inner) => inner,
+                Err(e) => Err(anyhow::anyhow!("Task join error: {}", e)),
+            };
+
+            match result {
                 Ok(_) => {
                     let msg = format!("Successfully uninstalled {}", package_name);
                     log_vec.push(msg.clone());
                     tracing::info!("{}", msg);
-                    *success.lock().unwrap() = Some(true);
-                    *message.lock().unwrap() = format!("{} uninstalled successfully", package_name);
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(true);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = format!("{} uninstalled successfully", package_name);
+                    }
                 }
                 Err(e) => {
                     let error_str = e.to_string();
                     let msg = format!("Error uninstalling {}: {}", package_name, error_str);
                     log_vec.push(msg.clone());
                     tracing::error!("{}", msg);
-                    *success.lock().unwrap() = Some(false);
-                    *message.lock().unwrap() = error_str;
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(false);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = error_str;
+                    }
                 }
             }
 
-            *logs.lock().unwrap() = log_vec;
+            if let Ok(mut logs_guard) = logs.lock() {
+                *logs_guard = log_vec;
+            }
         });
     }
 
@@ -707,10 +770,9 @@ impl BrewstyApp {
         });
 
         let use_case = Arc::clone(&self.use_cases.update);
-        let executor = self.executor.clone();
 
-        thread::spawn(move || {
-            let result = executor.execute(async move { use_case.execute(&package).await });
+        self.executor.spawn(async move {
+            let result = use_case.execute(&package).await;
 
             let mut log_vec = Vec::new();
             match result {
@@ -718,19 +780,29 @@ impl BrewstyApp {
                     let msg = format!("Successfully updated {}", package_name);
                     log_vec.push(msg.clone());
                     tracing::info!("{}", msg);
-                    *success.lock().unwrap() = Some(true);
-                    *message.lock().unwrap() = format!("{} updated successfully", package_name);
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(true);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = format!("{} updated successfully", package_name);
+                    }
                 }
                 Err(e) => {
                     let msg = format!("Error updating {}: {}", package_name, e);
                     log_vec.push(msg.clone());
                     tracing::error!("{}", msg);
-                    *success.lock().unwrap() = Some(false);
-                    *message.lock().unwrap() = msg;
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(false);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = msg;
+                    }
                 }
             }
 
-            *logs.lock().unwrap() = log_vec;
+            if let Ok(mut logs_guard) = logs.lock() {
+                *logs_guard = log_vec;
+            }
         });
     }
 
@@ -759,19 +831,31 @@ impl BrewstyApp {
         let use_case = Arc::clone(&self.use_cases.pin);
         let package_clone = package.clone();
 
-        self.executor.execute(async move {
+        self.executor.spawn(async move {
             match use_case.execute(package_clone).await {
                 Ok(_) => {
                     let msg = format!("Successfully pinned {}", package_name);
-                    *logs.lock().unwrap() = vec![msg.clone()];
-                    *success.lock().unwrap() = Some(true);
-                    *message.lock().unwrap() = format!("{} pinned successfully", package_name);
+                    if let Ok(mut logs_guard) = logs.lock() {
+                        *logs_guard = vec![msg.clone()];
+                    }
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(true);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = format!("{} pinned successfully", package_name);
+                    }
                 }
                 Err(e) => {
                     let msg = format!("Error pinning {}: {}", package_name, e);
-                    *logs.lock().unwrap() = vec![msg.clone()];
-                    *success.lock().unwrap() = Some(false);
-                    *message.lock().unwrap() = msg;
+                    if let Ok(mut logs_guard) = logs.lock() {
+                        *logs_guard = vec![msg.clone()];
+                    }
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(false);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = msg;
+                    }
                 }
             }
         });
@@ -802,19 +886,31 @@ impl BrewstyApp {
         let use_case = Arc::clone(&self.use_cases.unpin);
         let package_clone = package.clone();
 
-        self.executor.execute(async move {
+        self.executor.spawn(async move {
             match use_case.execute(package_clone).await {
                 Ok(_) => {
                     let msg = format!("Successfully unpinned {}", package_name);
-                    *logs.lock().unwrap() = vec![msg.clone()];
-                    *success.lock().unwrap() = Some(true);
-                    *message.lock().unwrap() = format!("{} unpinned successfully", package_name);
+                    if let Ok(mut logs_guard) = logs.lock() {
+                        *logs_guard = vec![msg.clone()];
+                    }
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(true);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = format!("{} unpinned successfully", package_name);
+                    }
                 }
                 Err(e) => {
                     let msg = format!("Error unpinning {}: {}", package_name, e);
-                    *logs.lock().unwrap() = vec![msg.clone()];
-                    *success.lock().unwrap() = Some(false);
-                    *message.lock().unwrap() = msg;
+                    if let Ok(mut logs_guard) = logs.lock() {
+                        *logs_guard = vec![msg.clone()];
+                    }
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(false);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = msg;
+                    }
                 }
             }
         });
@@ -840,27 +936,24 @@ impl BrewstyApp {
             logs: Arc::clone(&logs),
         });
 
-        thread::spawn(move || {
-            let rt = match tokio::runtime::Runtime::new() {
-                Ok(r) => r,
-                Err(e) => {
-                    tracing::error!("Failed to create runtime: {}", e);
-                    *logs.lock().unwrap() = vec![format!("Error: {}", e)];
-                    return;
-                }
-            };
-
-            match rt.block_on(async { use_case.execute().await }) {
+        self.executor.spawn(async move {
+            match use_case.execute().await {
                 Ok(service_list) => {
                     let msg = format!("Loaded {} services", service_list.len());
                     tracing::info!("{}", msg);
-                    *services.lock().unwrap() = service_list;
-                    *logs.lock().unwrap() = vec![msg];
+                    if let Ok(mut services_guard) = services.lock() {
+                        *services_guard = service_list;
+                    }
+                    if let Ok(mut logs_guard) = logs.lock() {
+                        *logs_guard = vec![msg];
+                    }
                 }
                 Err(e) => {
                     let msg = format!("Error loading services: {}", e);
                     tracing::error!("{}", msg);
-                    *logs.lock().unwrap() = vec![msg];
+                    if let Ok(mut logs_guard) = logs.lock() {
+                        *logs_guard = vec![msg];
+                    }
                 }
             }
         });
@@ -888,19 +981,31 @@ impl BrewstyApp {
         let use_case = Arc::clone(&self.use_cases.start_service);
         let service_name_clone = service_name.clone();
 
-        self.executor.execute(async move {
+        self.executor.spawn(async move {
             match use_case.execute(&service_name_clone).await {
                 Ok(_) => {
                     let msg = format!("Successfully started service {}", service_name);
-                    *logs.lock().unwrap() = vec![msg.clone()];
-                    *success.lock().unwrap() = Some(true);
-                    *message.lock().unwrap() = msg;
+                    if let Ok(mut logs_guard) = logs.lock() {
+                        *logs_guard = vec![msg.clone()];
+                    }
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(true);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = msg;
+                    }
                 }
                 Err(e) => {
                     let msg = format!("Error starting service {}: {}", service_name, e);
-                    *logs.lock().unwrap() = vec![msg.clone()];
-                    *success.lock().unwrap() = Some(false);
-                    *message.lock().unwrap() = msg;
+                    if let Ok(mut logs_guard) = logs.lock() {
+                        *logs_guard = vec![msg.clone()];
+                    }
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(false);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = msg;
+                    }
                 }
             }
         });
@@ -928,19 +1033,31 @@ impl BrewstyApp {
         let use_case = Arc::clone(&self.use_cases.stop_service);
         let service_name_clone = service_name.clone();
 
-        self.executor.execute(async move {
+        self.executor.spawn(async move {
             match use_case.execute(&service_name_clone).await {
                 Ok(_) => {
                     let msg = format!("Successfully stopped service {}", service_name);
-                    *logs.lock().unwrap() = vec![msg.clone()];
-                    *success.lock().unwrap() = Some(true);
-                    *message.lock().unwrap() = msg;
+                    if let Ok(mut logs_guard) = logs.lock() {
+                        *logs_guard = vec![msg.clone()];
+                    }
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(true);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = msg;
+                    }
                 }
                 Err(e) => {
                     let msg = format!("Error stopping service {}: {}", service_name, e);
-                    *logs.lock().unwrap() = vec![msg.clone()];
-                    *success.lock().unwrap() = Some(false);
-                    *message.lock().unwrap() = msg;
+                    if let Ok(mut logs_guard) = logs.lock() {
+                        *logs_guard = vec![msg.clone()];
+                    }
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(false);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = msg;
+                    }
                 }
             }
         });
@@ -958,29 +1075,42 @@ impl BrewstyApp {
         let logs = Arc::new(Mutex::new(Vec::new()));
         let message = Arc::new(Mutex::new(String::new()));
 
-        self.task_manager.set_active_task(AsyncTask::RestartService {
-            service_name: service_name.clone(),
-            success: Arc::clone(&success),
-            logs: Arc::clone(&logs),
-            message: Arc::clone(&message),
-        });
+        self.task_manager
+            .set_active_task(AsyncTask::RestartService {
+                service_name: service_name.clone(),
+                success: Arc::clone(&success),
+                logs: Arc::clone(&logs),
+                message: Arc::clone(&message),
+            });
 
         let use_case = Arc::clone(&self.use_cases.restart_service);
         let service_name_clone = service_name.clone();
 
-        self.executor.execute(async move {
+        self.executor.spawn(async move {
             match use_case.execute(&service_name_clone).await {
                 Ok(_) => {
                     let msg = format!("Successfully restarted service {}", service_name);
-                    *logs.lock().unwrap() = vec![msg.clone()];
-                    *success.lock().unwrap() = Some(true);
-                    *message.lock().unwrap() = msg;
+                    if let Ok(mut logs_guard) = logs.lock() {
+                        *logs_guard = vec![msg.clone()];
+                    }
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(true);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = msg;
+                    }
                 }
                 Err(e) => {
                     let msg = format!("Error restarting service {}: {}", service_name, e);
-                    *logs.lock().unwrap() = vec![msg.clone()];
-                    *success.lock().unwrap() = Some(false);
-                    *message.lock().unwrap() = msg;
+                    if let Ok(mut logs_guard) = logs.lock() {
+                        *logs_guard = vec![msg.clone()];
+                    }
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(false);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = msg;
+                    }
                 }
             }
         });
@@ -1008,18 +1138,19 @@ impl BrewstyApp {
             let logs = Arc::new(Mutex::new(Vec::new()));
             let message = Arc::new(Mutex::new(String::new()));
 
-            self.task_manager.set_active_task(AsyncTask::ExportPackages {
-                success: Arc::clone(&success),
-                logs: Arc::clone(&logs),
-                message: Arc::clone(&message),
-            });
+            self.task_manager
+                .set_active_task(AsyncTask::ExportPackages {
+                    success: Arc::clone(&success),
+                    logs: Arc::clone(&logs),
+                    message: Arc::clone(&message),
+                });
 
             let use_case = Arc::clone(&self.use_cases.export_packages);
-            let executor = self.executor.clone();
             let path_display = path.display().to_string();
 
-            thread::spawn(move || {
-                let result: anyhow::Result<crate::domain::entities::PackageList> = executor.execute(async move { use_case.execute(&path).await });
+            self.executor.spawn(async move {
+                let result: anyhow::Result<crate::domain::entities::PackageList> =
+                    use_case.execute(&path).await;
 
                 let mut log_vec = Vec::new();
                 match result {
@@ -1031,19 +1162,29 @@ impl BrewstyApp {
                         );
                         log_vec.push(msg.clone());
                         tracing::info!("{}", msg);
-                        *success.lock().unwrap() = Some(true);
-                        *message.lock().unwrap() = "Packages exported successfully".to_string();
+                        if let Ok(mut success_guard) = success.lock() {
+                            *success_guard = Some(true);
+                        }
+                        if let Ok(mut message_guard) = message.lock() {
+                            *message_guard = "Packages exported successfully".to_string();
+                        }
                     }
                     Err(e) => {
                         let msg = format!("Error exporting packages: {}", e);
                         log_vec.push(msg.clone());
                         tracing::error!("{}", msg);
-                        *success.lock().unwrap() = Some(false);
-                        *message.lock().unwrap() = msg;
+                        if let Ok(mut success_guard) = success.lock() {
+                            *success_guard = Some(false);
+                        }
+                        if let Ok(mut message_guard) = message.lock() {
+                            *message_guard = msg;
+                        }
                     }
                 }
 
-                *logs.lock().unwrap() = log_vec;
+                if let Ok(mut logs_guard) = logs.lock() {
+                    *logs_guard = log_vec;
+                }
             });
         }
     }
@@ -1070,42 +1211,50 @@ impl BrewstyApp {
             let logs = Arc::new(Mutex::new(Vec::new()));
             let message = Arc::new(Mutex::new(String::new()));
 
-            self.task_manager.set_active_task(AsyncTask::ImportPackages {
-                success: Arc::clone(&success),
-                logs: Arc::clone(&logs),
-                message: Arc::clone(&message),
-            });
+            self.task_manager
+                .set_active_task(AsyncTask::ImportPackages {
+                    success: Arc::clone(&success),
+                    logs: Arc::clone(&logs),
+                    message: Arc::clone(&message),
+                });
 
             let use_case = Arc::clone(&self.use_cases.import_packages);
-            let executor = self.executor.clone();
             let path_display = path.display().to_string();
 
-            thread::spawn(move || {
-                let result = executor.execute(async move { use_case.execute(&path).await });
+            self.executor.spawn(async move {
+                let result = use_case.execute(&path).await;
 
                 let mut log_vec = Vec::new();
                 match result {
                     Ok(_) => {
-                        let msg = format!(
-                            "Successfully imported packages from {}",
-                            path_display
-                        );
+                        let msg = format!("Successfully imported packages from {}", path_display);
                         log_vec.push(msg.clone());
                         tracing::info!("{}", msg);
-                        *success.lock().unwrap() = Some(true);
-                        *message.lock().unwrap() =
-                            "Packages imported successfully. Reloading package list...".to_string();
+                        if let Ok(mut success_guard) = success.lock() {
+                            *success_guard = Some(true);
+                        }
+                        if let Ok(mut message_guard) = message.lock() {
+                            *message_guard =
+                                "Packages imported successfully. Reloading package list..."
+                                    .to_string();
+                        }
                     }
                     Err(e) => {
                         let msg = format!("Error importing packages: {}", e);
                         log_vec.push(msg.clone());
                         tracing::error!("{}", msg);
-                        *success.lock().unwrap() = Some(false);
-                        *message.lock().unwrap() = msg;
+                        if let Ok(mut success_guard) = success.lock() {
+                            *success_guard = Some(false);
+                        }
+                        if let Ok(mut message_guard) = message.lock() {
+                            *message_guard = msg;
+                        }
                     }
                 }
 
-                *logs.lock().unwrap() = log_vec;
+                if let Ok(mut logs_guard) = logs.lock() {
+                    *logs_guard = log_vec;
+                }
             });
         }
     }
@@ -1132,10 +1281,9 @@ impl BrewstyApp {
         });
 
         let use_case = Arc::clone(&self.use_cases.update_all);
-        let executor = self.executor.clone();
 
-        thread::spawn(move || {
-            let result = executor.execute(async move { use_case.execute().await });
+        self.executor.spawn(async move {
+            let result = use_case.execute().await;
 
             let mut log_vec = Vec::new();
             match result {
@@ -1143,19 +1291,29 @@ impl BrewstyApp {
                     let msg = "Successfully updated all packages".to_string();
                     log_vec.push(msg.clone());
                     tracing::info!("{}", msg);
-                    *success.lock().unwrap() = Some(true);
-                    *message.lock().unwrap() = "All packages updated successfully".to_string();
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(true);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = "All packages updated successfully".to_string();
+                    }
                 }
                 Err(e) => {
                     let msg = format!("Error updating all packages: {}", e);
                     log_vec.push(msg.clone());
                     tracing::error!("{}", msg);
-                    *success.lock().unwrap() = Some(false);
-                    *message.lock().unwrap() = msg;
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(false);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = msg;
+                    }
                 }
             }
 
-            *logs.lock().unwrap() = log_vec;
+            if let Ok(mut logs_guard) = logs.lock() {
+                *logs_guard = log_vec;
+            }
         });
     }
 
@@ -1217,10 +1375,9 @@ impl BrewstyApp {
         });
 
         let use_case = Arc::clone(&self.use_cases.clean_cache);
-        let executor = self.executor.clone();
 
-        thread::spawn(move || {
-            let result = executor.execute(async move { use_case.execute().await });
+        self.executor.spawn(async move {
+            let result = use_case.execute().await;
 
             let mut log_vec = Vec::new();
             match result {
@@ -1228,19 +1385,29 @@ impl BrewstyApp {
                     let msg = "Successfully cleaned cache".to_string();
                     log_vec.push(msg.clone());
                     tracing::info!("{}", msg);
-                    *success.lock().unwrap() = Some(true);
-                    *message.lock().unwrap() = "Cache cleaned successfully".to_string();
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(true);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = "Cache cleaned successfully".to_string();
+                    }
                 }
                 Err(e) => {
                     let msg = format!("Error cleaning cache: {}", e);
                     log_vec.push(msg.clone());
                     tracing::error!("{}", msg);
-                    *success.lock().unwrap() = Some(false);
-                    *message.lock().unwrap() = msg;
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(false);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = msg;
+                    }
                 }
             }
 
-            *logs.lock().unwrap() = log_vec;
+            if let Ok(mut logs_guard) = logs.lock() {
+                *logs_guard = log_vec;
+            }
         });
     }
 
@@ -1268,10 +1435,9 @@ impl BrewstyApp {
             });
 
         let use_case = Arc::clone(&self.use_cases.cleanup_old_versions);
-        let executor = self.executor.clone();
 
-        thread::spawn(move || {
-            let result = executor.execute(async move { use_case.execute().await });
+        self.executor.spawn(async move {
+            let result = use_case.execute().await;
 
             let mut log_vec = Vec::new();
             match result {
@@ -1279,19 +1445,29 @@ impl BrewstyApp {
                     let msg = "Successfully cleaned up old versions".to_string();
                     log_vec.push(msg.clone());
                     tracing::info!("{}", msg);
-                    *success.lock().unwrap() = Some(true);
-                    *message.lock().unwrap() = "Old versions cleaned up successfully".to_string();
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(true);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = "Old versions cleaned up successfully".to_string();
+                    }
                 }
                 Err(e) => {
                     let msg = format!("Error cleaning up old versions: {}", e);
                     log_vec.push(msg.clone());
                     tracing::error!("{}", msg);
-                    *success.lock().unwrap() = Some(false);
-                    *message.lock().unwrap() = msg;
+                    if let Ok(mut success_guard) = success.lock() {
+                        *success_guard = Some(false);
+                    }
+                    if let Ok(mut message_guard) = message.lock() {
+                        *message_guard = msg;
+                    }
                 }
             }
 
-            *logs.lock().unwrap() = log_vec;
+            if let Ok(mut logs_guard) = logs.lock() {
+                *logs_guard = log_vec;
+            }
         });
     }
 
@@ -1323,20 +1499,11 @@ impl BrewstyApp {
             logs: Arc::clone(&output_log),
         });
 
-        thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-
-            let formulae_result = rt.block_on(async {
-                use_case_formulae
-                    .execute(&query, PackageType::Formula)
-                    .await
-            });
-
-            let casks_result = rt.block_on(async {
-                use_case_casks
-                    .execute(&query_clone, PackageType::Cask)
-                    .await
-            });
+        self.executor.spawn(async move {
+            let (formulae_result, casks_result) = tokio::join!(
+                use_case_formulae.execute(&query, PackageType::Formula),
+                use_case_casks.execute(&query_clone, PackageType::Cask)
+            );
 
             let mut results = Vec::new();
             let mut logs = Vec::new();
@@ -1369,8 +1536,12 @@ impl BrewstyApp {
                 }
             }
 
-            *search_results.lock().unwrap() = results;
-            *output_log.lock().unwrap() = logs;
+            if let Ok(mut results_guard) = search_results.lock() {
+                *results_guard = results;
+            }
+            if let Ok(mut logs_guard) = output_log.lock() {
+                *logs_guard = logs;
+            }
         });
     }
 
@@ -1411,13 +1582,10 @@ impl BrewstyApp {
         self.task_manager
             .add_package_info_task(package_name.clone(), task);
 
-        thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
+        self.executor.spawn(async move {
+            tracing::debug!("Started task for loading {}", name_clone);
 
-            tracing::debug!("Spawned thread for loading {}", name_clone);
-
-            let info_result =
-                rt.block_on(async { use_case.execute(&name_clone, package_type_clone).await });
+            let info_result = use_case.execute(&name_clone, package_type_clone).await;
 
             match info_result {
                 Ok(package) => {
@@ -1426,13 +1594,17 @@ impl BrewstyApp {
                         name_clone,
                         package.version
                     );
-                    *result.lock().unwrap() = Some(package);
+                    if let Ok(mut result_guard) = result.lock() {
+                        *result_guard = Some(package);
+                    }
                 }
                 Err(e) => {
                     tracing::error!("Error loading package info for {}: {}", name_clone, e);
                     let failed_package = Package::new(name_clone.clone(), package_type_clone2)
                         .set_version_load_failed(true);
-                    *result.lock().unwrap() = Some(failed_package);
+                    if let Ok(mut result_guard) = result.lock() {
+                        *result_guard = Some(failed_package);
+                    }
                 }
             }
         });
@@ -1476,7 +1648,8 @@ impl BrewstyApp {
         }
 
         if let Some((_name, package)) = result.package_info {
-            self.search_results.update_package(package);
+            self.search_results.update_package(package.clone());
+            self.merged_packages.update_package(package);
         }
 
         if let Some((success, message)) = result.install_completed {
@@ -1694,14 +1867,6 @@ impl BrewstyApp {
         }
     }
 
-    fn show_loader(&self, ui: &mut egui::Ui, message: &str) {
-        ui.vertical_centered(|ui| {
-            ui.add_space(100.0);
-            ui.spinner();
-            ui.label(message);
-        });
-    }
-
     fn poll_logs(&mut self) {
         while let Ok(log_entry) = self.log_rx.try_recv() {
             self.log_manager.push(log_entry);
@@ -1735,7 +1900,7 @@ impl eframe::App for BrewstyApp {
             self.initialized = true;
             // Only load installed packages if auto-update is enabled
             self.load_installed_packages(self.config.auto_update_check);
-            
+
             // Apply initial theme
             self.apply_theme(ctx);
         }
@@ -1842,352 +2007,120 @@ impl eframe::App for BrewstyApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.tab_manager.current() {
                 Tab::Installed => {
-                    ui.horizontal(|ui| {
-                        ui.label("Search:");
-                        ui.text_edit_singleline(self.filter_state.installed_search_query_mut());
-                        ui.separator();
-                        let mut show_formulae = self.filter_state.show_formulae();
-                        let mut show_casks = self.filter_state.show_casks();
-                        ui.checkbox(&mut show_formulae, "Show Formulae");
-                        ui.checkbox(&mut show_casks, "Show Casks");
-                        self.filter_state.set_show_formulae(show_formulae);
-                        self.filter_state.set_show_casks(show_casks);
-                        ui.separator();
-                        if ui.button("Refresh").clicked() {
-                            self.load_installed_packages(true);
-                        }
-                    });
+                    let actions = InstalledTab::show(
+                        ui,
+                        &mut self.merged_packages,
+                        &mut self.filter_state,
+                        &self.packages_in_operation,
+                        self.loading_installed,
+                        self.loading_outdated,
+                        &mut self.info_modal,
+                    );
 
-                    ui.separator();
-
-                    if self.loading_installed || self.loading_outdated {
-                        self.show_loader(ui, "Loading packages...");
-                    } else {
-                        let mut install_action = None;
-                        let mut uninstall_action = None;
-                        let mut update_action = None;
-                        let mut update_selected_action = None;
-                        let mut pin_action = None;
-                        let mut unpin_action = None;
-                        let mut load_info_action = None;
-
-                        self.merged_packages.show_merged_with_search_and_pin(
-                            ui,
-                            &mut install_action,
-                            &mut uninstall_action,
-                            &mut update_action,
-                            &mut update_selected_action,
-                            self.filter_state.show_formulae(),
-                            self.filter_state.show_casks(),
-                            self.filter_state.installed_search_query(),
-                            &mut load_info_action,
-                            &self.packages_in_operation,
-                            &mut pin_action,
-                            &mut unpin_action,
-                        );
-
-                        if let Some(package) = install_action {
-                            self.handle_install(package);
-                        }
-                        if let Some(package) = uninstall_action {
-                            self.handle_uninstall(package);
-                        }
-                        if let Some(package) = update_action {
-                            self.handle_update(package);
-                        }
-                        if let Some(package_names) = update_selected_action {
-                            self.handle_update_selected(package_names);
-                        }
-                        if let Some(package) = pin_action {
-                            self.handle_pin(package);
-                        }
-                        if let Some(package) = unpin_action {
-                            self.handle_unpin(package);
-                        }
-                        if let Some(package) = self.merged_packages.get_show_info_action() {
-                            self.info_modal.show(package);
+                    for action in actions {
+                        match action {
+                            InstalledAction::Refresh => self.load_installed_packages(true),
+                            InstalledAction::Install(pkg) => self.handle_install(pkg),
+                            InstalledAction::Uninstall(pkg) => self.handle_uninstall(pkg),
+                            InstalledAction::Update(pkg) => self.handle_update(pkg),
+                            InstalledAction::UpdateSelected(pkgs) => {
+                                self.handle_update_selected(pkgs)
+                            }
+                            InstalledAction::Pin(pkg) => self.handle_pin(pkg),
+                            InstalledAction::Unpin(pkg) => self.handle_unpin(pkg),
+                            InstalledAction::LoadInfo(name, pkg_type) => {
+                                self.load_package_info(name, pkg_type)
+                            }
                         }
                     }
                 }
 
                 Tab::SearchInstall => {
-                    ui.horizontal(|ui| {
-                        ui.label("Search:");
-                        let response =
-                            ui.text_edit_singleline(self.filter_state.search_query_mut());
-                        if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                            self.handle_search();
-                        }
-                        if ui.button("Search").clicked() {
-                            self.handle_search();
-                        }
-                    });
+                    let actions = SearchTab::show(
+                        ui,
+                        &mut self.search_results,
+                        &mut self.filter_state,
+                        &self.packages_in_operation,
+                        self.loading_search,
+                        &mut self.auto_load_version_info,
+                        &mut self.info_modal,
+                    );
 
-                    ui.horizontal(|ui| {
-                        let mut show_formulae = self.filter_state.show_formulae();
-                        let mut show_casks = self.filter_state.show_casks();
-                        ui.checkbox(&mut show_formulae, "Show Formulae");
-                        ui.checkbox(&mut show_casks, "Show Casks");
-                        self.filter_state.set_show_formulae(show_formulae);
-                        self.filter_state.set_show_casks(show_casks);
-                        ui.separator();
-                        ui.checkbox(&mut self.auto_load_version_info, "Auto-load version info");
-                    });
-
-                    ui.separator();
-
-                    if self.loading_search {
-                        self.show_loader(ui, "Searching...");
-                    } else {
-                        let mut install_action = None;
-                        let mut uninstall_action = None;
-                        let mut update_action = None;
-                        let mut load_info_action = None;
-                        let mut pin_action = None;
-                        let mut unpin_action = None;
-
-                        self.search_results.show_filtered_with_search_and_pin(
-                            ui,
-                            &mut install_action,
-                            &mut uninstall_action,
-                            &mut update_action,
-                            self.filter_state.show_formulae(),
-                            self.filter_state.show_casks(),
-                            "",
-                            &mut load_info_action,
-                            &self.packages_in_operation,
-                            &mut pin_action,
-                            &mut unpin_action,
-                        );
-
-                        if let Some(package) = install_action {
-                            self.handle_install(package);
-                        }
-                        if let Some(package) = uninstall_action {
-                            self.handle_uninstall(package);
-                        }
-                        if let Some(package) = update_action {
-                            self.handle_update(package);
-                        }
-                        if let Some(package) = load_info_action {
-                            self.load_package_info(package.name.clone(), package.package_type);
-                        }
-                        if let Some(package) = pin_action {
-                            self.handle_pin(package);
-                        }
-                        if let Some(package) = unpin_action {
-                            self.handle_unpin(package);
-                        }
-                        if let Some(package) = self.search_results.get_show_info_action() {
-                            self.info_modal.show(package);
+                    for action in actions {
+                        match action {
+                            SearchAction::Search => self.handle_search(),
+                            SearchAction::Install(pkg) => self.handle_install(pkg),
+                            SearchAction::Uninstall(pkg) => self.handle_uninstall(pkg),
+                            SearchAction::Update(pkg) => self.handle_update(pkg),
+                            SearchAction::LoadInfo(name, pkg_type) => {
+                                self.load_package_info(name, pkg_type)
+                            }
+                            SearchAction::Pin(pkg) => self.handle_pin(pkg),
+                            SearchAction::Unpin(pkg) => self.handle_unpin(pkg),
                         }
                     }
                 }
 
                 Tab::Services => {
-                    ui.horizontal(|ui| {
-                        ui.label("Brew Services");
-                        ui.separator();
-                        if ui.button("Refresh").clicked() {
-                            self.load_services();
-                        }
-                    });
+                    let actions = ServicesTab::show(
+                        ui,
+                        &mut self.service_list,
+                        &self.services_in_operation,
+                        self.loading_services,
+                    );
 
-                    ui.separator();
-
-                    if self.loading_services {
-                        self.show_loader(ui, "Loading services...");
-                    } else {
-                        let mut start_action = None;
-                        let mut stop_action = None;
-                        let mut restart_action = None;
-
-                        self.service_list.show(
-                            ui,
-                            &mut start_action,
-                            &mut stop_action,
-                            &mut restart_action,
-                            &self.services_in_operation,
-                        );
-
-                        if let Some(service_name) = start_action {
-                            self.handle_start_service(service_name);
-                        }
-                        if let Some(service_name) = stop_action {
-                            self.handle_stop_service(service_name);
-                        }
-                        if let Some(service_name) = restart_action {
-                            self.handle_restart_service(service_name);
+                    for action in actions {
+                        match action {
+                            ServiceAction::Refresh => self.load_services(),
+                            ServiceAction::Start(name) => self.handle_start_service(name),
+                            ServiceAction::Stop(name) => self.handle_stop_service(name),
+                            ServiceAction::Restart(name) => self.handle_restart_service(name),
                         }
                     }
                 }
 
                 Tab::Settings => {
                     tracing::trace!("Rendering Settings Tab");
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui.heading("Settings & Maintenance");
-                        ui.separator();
+                    let actions = SettingsTab::show(
+                        ui,
+                        &mut self.config,
+                        &mut self.log_manager,
+                        self.loading_export,
+                        self.loading_import,
+                    );
 
-                        ui.group(|ui| {
-                            ui.heading("General");
-                            
-                            ui.horizontal(|ui| {
-                                ui.label("Theme:");
-                                egui::ComboBox::new("theme_combo", "")
-                                    .selected_text(format!("{:?}", self.config.theme))
-                                    .show_ui(ui, |ui| {
-                                        if ui.selectable_value(&mut self.config.theme, ThemeMode::System, "System").clicked() {
-                                            self.save_config();
-                                            self.apply_theme(ui.ctx());
-                                        }
-                                        if ui.selectable_value(&mut self.config.theme, ThemeMode::Light, "Light").clicked() {
-                                            self.save_config();
-                                            self.apply_theme(ui.ctx());
-                                        }
-                                        if ui.selectable_value(&mut self.config.theme, ThemeMode::Dark, "Dark").clicked() {
-                                            self.save_config();
-                                            self.apply_theme(ui.ctx());
-                                        }
-                                    });
-                            });
-
-                            if ui.checkbox(&mut self.config.auto_update_check, "Check for updates on startup").changed() {
-                                self.save_config();
+                    for action in actions {
+                        match action {
+                            SettingsAction::SaveConfig => self.save_config(),
+                            SettingsAction::ApplyTheme => self.apply_theme(ctx),
+                            SettingsAction::ShowCleanupPreview(cleanup_type) => {
+                                self.show_cleanup_preview(cleanup_type)
                             }
-
-                            if ui.checkbox(&mut self.config.confirm_before_actions, "Confirm before dangerous actions").changed() {
-                                self.save_config();
-                            }
-                        });
-
-                        ui.add_space(10.0);
-
-                        ui.group(|ui| {
-                            ui.heading("Log Levels");
-                            ui.horizontal(|ui| {
-                                let mut debug = self.log_manager.is_level_visible(LogLevel::Debug);
-                                let mut info = self.log_manager.is_level_visible(LogLevel::Info);
-                                let mut warn = self.log_manager.is_level_visible(LogLevel::Warn);
-                                let mut error = self.log_manager.is_level_visible(LogLevel::Error);
-
-                                if ui.checkbox(&mut debug, "Debug").changed() {
-                                    self.log_manager.set_level_visible(LogLevel::Debug, debug);
-                                }
-                                if ui.checkbox(&mut info, "Info").changed() {
-                                    self.log_manager.set_level_visible(LogLevel::Info, info);
-                                }
-                                if ui.checkbox(&mut warn, "Warn").changed() {
-                                    self.log_manager.set_level_visible(LogLevel::Warn, warn);
-                                }
-                                if ui.checkbox(&mut error, "Error").changed() {
-                                    self.log_manager.set_level_visible(LogLevel::Error, error);
-                                }
-                            });
-                        });
-
-                        ui.separator();
-                        ui.heading("Maintenance");
-
-                        ui.vertical_centered(|ui| {
-                            if ui.button("Clean Cache").clicked() {
-                                self.show_cleanup_preview(CleanupType::Cache);
-                            }
-                            ui.label("Remove old downloads from cache");
-
-                            ui.add_space(10.0);
-
-                            if ui.button("Cleanup Old Versions").clicked() {
-                                self.show_cleanup_preview(CleanupType::OldVersions);
-                            }
-                            ui.label("Remove old versions of installed packages");
-
-                            ui.add_space(10.0);
-
-                            if ui.button("Update All Packages").clicked() {
-                                self.handle_update_all();
-                            }
-                            ui.label("Update all installed packages");
-                        });
-
-                        ui.separator();
-                        ui.heading("Package List Management");
-
-                        ui.vertical_centered(|ui| {
-                            if ui
-                                .add_enabled(!self.loading_export, egui::Button::new("Export Packages"))
-                                .clicked()
-                            {
-                                self.handle_export_packages();
-                            }
-                            ui.label("Export installed packages to JSON");
-
-                            ui.add_space(10.0);
-
-                            if ui
-                                .add_enabled(!self.loading_import, egui::Button::new("Import Packages"))
-                                .clicked()
-                            {
-                                self.handle_import_packages();
-                            }
-                            ui.label("Import and install packages from JSON");
-                        });
-                    });
+                            SettingsAction::UpdateAll => self.handle_update_all(),
+                            SettingsAction::ExportPackages => self.handle_export_packages(),
+                            SettingsAction::ImportPackages => self.handle_import_packages(),
+                        }
+                    }
                 }
 
                 Tab::Log => {
-                    ui.heading("Command Log");
-                    ui.separator();
-
-                    ui.horizontal(|ui| {
-                        if ui.button("📋 Copy All").clicked() {
-                            let output = self
-                                .log_manager
-                                .all_logs()
-                                .map(|entry| {
-                                    format!("[{}] {}", entry.format_timestamp(), entry.message)
-                                })
-                                .collect::<Vec<_>>()
-                                .join("\n");
-                            ctx.copy_text(output);
+                    let actions = LogTab::show(ui, &self.log_manager);
+                    for action in actions {
+                        match action {
+                            LogAction::CopyAll => {
+                                let output = self
+                                    .log_manager
+                                    .all_logs()
+                                    .map(|entry| {
+                                        format!("[{}] {}", entry.format_timestamp(), entry.message)
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join("\n");
+                                ctx.copy_text(output);
+                            }
+                            LogAction::Clear => self.log_manager = LogManager::new(),
                         }
-                        if ui.button("🗑 Clear").clicked() {
-                            self.log_manager = LogManager::new();
-                        }
-                    });
-
-                    ui.separator();
-
-                    egui::ScrollArea::vertical()
-                        .auto_shrink([false; 2])
-                        .show(ui, |ui| {
-                            ui.visuals_mut().override_text_color =
-                                Some(egui::Color32::from_rgb(0, 255, 0));
-                            let bg_frame = egui::Frame::default()
-                                .fill(egui::Color32::BLACK)
-                                .inner_margin(8.0);
-                            bg_frame.show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                ui.set_style({
-                                    let mut style = (*ui.ctx().style()).clone();
-                                    style.override_font_id = Some(egui::FontId::monospace(12.0));
-                                    style
-                                });
-
-                                for entry in self.log_manager.filtered_logs_reversed() {
-                                    ui.horizontal(|ui| {
-                                        ui.label(
-                                            egui::RichText::new(format!(
-                                                "[{}]",
-                                                entry.format_timestamp()
-                                            ))
-                                            .color(egui::Color32::GRAY)
-                                            .monospace(),
-                                        );
-                                        ui.monospace(&entry.message);
-                                    });
-                                }
-                            });
-                        });
+                    }
                 }
             }
 

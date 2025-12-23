@@ -80,6 +80,13 @@ impl MergedPackageList {
         if let Some(pos) = self.packages.iter().position(|p| p.name == package_name) {
             self.packages.remove(pos);
         }
+        if let Some(pos) = self
+            .outdated_packages
+            .iter()
+            .position(|p| p.name == package_name)
+        {
+            self.outdated_packages.remove(pos);
+        }
     }
 
     pub fn add_installed_package(&mut self, package: Package) {
