@@ -1,9 +1,10 @@
 use crate::application::UseCaseContainer;
-use crate::domain::entities::{Package, PackageType, Service};
+use crate::domain::entities::{Package, PackageType, Service, AppConfig, ThemeMode};
 use crate::presentation::components::{
     CleanupAction, CleanupModal, CleanupType, FilterState, InfoModal, LogLevel, LogManager,
     MergedPackageList, PackageList, PasswordModal, ServiceList, Tab, TabManager,
 };
+use crate::infrastructure::config_repository::ConfigRepository;
 use crate::presentation::services::{AsyncExecutor, AsyncTask, AsyncTaskManager};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
@@ -12,6 +13,10 @@ use std::thread;
 pub struct BrewstyApp {
     tab_manager: TabManager,
     filter_state: FilterState,
+    
+    config: AppConfig,
+    config_repo: ConfigRepository,
+
     cleanup_modal: CleanupModal,
     info_modal: InfoModal,
     password_modal: PasswordModal,
@@ -68,10 +73,20 @@ enum PendingOperation {
 impl BrewstyApp {
     pub fn new(use_cases: Arc<UseCaseContainer>, log_rx: Receiver<String>) -> Self {
         let executor = AsyncExecutor::new();
+        
+        let config_repo = ConfigRepository::new();
+        let config = config_repo.load().unwrap_or_else(|e| {
+            tracing::error!("Failed to load config: {}", e);
+            AppConfig::default()
+        });
 
         Self {
             tab_manager: TabManager::new(),
             filter_state: FilterState::new(),
+            
+            config: config.clone(),
+            config_repo,
+
             cleanup_modal: CleanupModal::new(),
             info_modal: InfoModal::new(),
             password_modal: PasswordModal::new(),
@@ -111,17 +126,44 @@ impl BrewstyApp {
         }
     }
 
-    fn load_installed_packages(&mut self) {
+    fn save_config(&self) {
+        if let Err(e) = self.config_repo.save(&self.config) {
+            tracing::error!("Failed to save config: {}", e);
+        }
+    }
+
+    fn apply_theme(&self, ctx: &egui::Context) {
+        let visuals = match self.config.theme {
+            ThemeMode::System => egui::Visuals::default(),
+            ThemeMode::Light => egui::Visuals::light(),
+            ThemeMode::Dark => egui::Visuals::dark(),
+        };
+        ctx.set_visuals(visuals);
+    }
+
+    fn load_installed_packages(&mut self, include_outdated: bool) {
         if self.loading_installed || self.loading_outdated {
             return;
         }
 
         self.loading_installed = true;
-        self.loading_outdated = true;
-        self.status_message = "Loading installed and outdated packages...".to_string();
-        self.log_manager
-            .push("Loading installed and outdated packages (formulae and casks)".to_string());
-        tracing::info!("Loading installed and outdated packages (formulae and casks)");
+        self.loading_installed = true;
+        if include_outdated {
+            self.loading_outdated = true;
+        }
+        self.status_message = if include_outdated {
+            "Loading installed and outdated packages...".to_string()
+        } else {
+            "Loading installed packages...".to_string()
+        };
+        
+        if include_outdated {
+            self.log_manager.push("Loading installed and outdated packages (formulae and casks)".to_string());
+            tracing::info!("Loading installed and outdated packages (formulae and casks)");
+        } else {
+            self.log_manager.push("Loading installed packages (formulae and casks)".to_string());
+            tracing::info!("Loading installed packages (formulae and casks)");
+        }
 
         let use_case_installed = Arc::clone(&self.use_cases.list_installed);
         let use_case_outdated = Arc::clone(&self.use_cases.list_outdated);
@@ -136,10 +178,12 @@ impl BrewstyApp {
             logs: Arc::clone(&installed_log),
         });
 
-        self.task_manager.set_active_task(AsyncTask::LoadOutdated {
-            packages: Arc::clone(&outdated_packages),
-            logs: Arc::clone(&outdated_log),
-        });
+        if include_outdated {
+            self.task_manager.set_active_task(AsyncTask::LoadOutdated {
+                packages: Arc::clone(&outdated_packages),
+                logs: Arc::clone(&outdated_log),
+            });
+        }
 
         thread::spawn(move || {
             tracing::trace!("THREAD STARTED: load_installed_packages");
@@ -175,29 +219,34 @@ impl BrewstyApp {
                             .map_err(|e| e.to_string())
                     );
 
-                    tracing::trace!("THREAD: about to execute outdated formulae");
-                    let outdated_formulae_result = rt
-                        .block_on(async { use_case_outdated.execute(PackageType::Formula).await });
+                    let mut outdated_formulae_result: anyhow::Result<Vec<Package>> = Ok(Vec::new());
+                    let mut outdated_casks_result: anyhow::Result<Vec<Package>> = Ok(Vec::new());
 
-                    tracing::debug!(
-                        "Outdated formulae result: {:?}",
-                        outdated_formulae_result
-                            .as_ref()
-                            .map(|p| p.len())
-                            .map_err(|e| e.to_string())
-                    );
-
-                    tracing::trace!("THREAD: about to execute outdated casks");
-                    let outdated_casks_result =
-                        rt.block_on(async { use_case_outdated.execute(PackageType::Cask).await });
-
-                    tracing::debug!(
-                        "Outdated casks result: {:?}",
-                        outdated_casks_result
-                            .as_ref()
-                            .map(|p| p.len())
-                            .map_err(|e| e.to_string())
-                    );
+                    if include_outdated {
+                         tracing::trace!("THREAD: about to execute outdated formulae");
+                         outdated_formulae_result = rt
+                             .block_on(async { use_case_outdated.execute(PackageType::Formula).await });
+    
+                         tracing::debug!(
+                             "Outdated formulae result: {:?}",
+                             outdated_formulae_result
+                                 .as_ref()
+                                 .map(|p| p.len())
+                                 .map_err(|e| e.to_string())
+                         );
+    
+                         tracing::trace!("THREAD: about to execute outdated casks");
+                         outdated_casks_result =
+                             rt.block_on(async { use_case_outdated.execute(PackageType::Cask).await });
+    
+                         tracing::debug!(
+                             "Outdated casks result: {:?}",
+                             outdated_casks_result
+                                 .as_ref()
+                                 .map(|p| p.len())
+                                 .map_err(|e| e.to_string())
+                         );
+                    }
 
                     let mut installed = Vec::new();
                     let mut outdated = Vec::new();
@@ -232,31 +281,33 @@ impl BrewstyApp {
                         }
                     }
 
-                    match outdated_formulae_result {
-                        Ok(pkgs) => {
-                            let msg = format!("Loaded {} outdated formulae", pkgs.len());
-                            outdated_logs.push(msg.clone());
-                            tracing::info!("{}", msg);
-                            outdated.extend(pkgs);
+                    if include_outdated {
+                        match outdated_formulae_result {
+                            Ok(pkgs) => {
+                                let msg = format!("Loaded {} outdated formulae", pkgs.len());
+                                outdated_logs.push(msg.clone());
+                                tracing::info!("{}", msg);
+                                outdated.extend(pkgs);
+                            }
+                            Err(e) => {
+                                let msg = format!("Error loading outdated formulae: {}", e);
+                                outdated_logs.push(msg.clone());
+                                tracing::error!("{}", msg);
+                            }
                         }
-                        Err(e) => {
-                            let msg = format!("Error loading outdated formulae: {}", e);
-                            outdated_logs.push(msg.clone());
-                            tracing::error!("{}", msg);
-                        }
-                    }
 
-                    match outdated_casks_result {
-                        Ok(pkgs) => {
-                            let msg = format!("Loaded {} outdated casks", pkgs.len());
-                            outdated_logs.push(msg.clone());
-                            tracing::info!("{}", msg);
-                            outdated.extend(pkgs);
-                        }
-                        Err(e) => {
-                            let msg = format!("Error loading outdated casks: {}", e);
-                            outdated_logs.push(msg.clone());
-                            tracing::error!("{}", msg);
+                        match outdated_casks_result {
+                            Ok(pkgs) => {
+                                let msg = format!("Loaded {} outdated casks", pkgs.len());
+                                outdated_logs.push(msg.clone());
+                                tracing::info!("{}", msg);
+                                outdated.extend(pkgs);
+                            }
+                            Err(e) => {
+                                let msg = format!("Error loading outdated casks: {}", e);
+                                outdated_logs.push(msg.clone());
+                                tracing::error!("{}", msg);
+                            }
                         }
                     }
 
@@ -277,8 +328,12 @@ impl BrewstyApp {
                     })? = outdated;
 
                     installed_logs.push("Finished loading installed packages".to_string());
-                    outdated_logs.push("Finished loading outdated packages".to_string());
-                    tracing::info!("Finished loading installed and outdated packages");
+                    if include_outdated {
+                        outdated_logs.push("Finished loading outdated packages".to_string());
+                        tracing::info!("Finished loading installed and outdated packages");
+                    } else {
+                        tracing::info!("Finished loading installed packages");
+                    }
 
                     tracing::debug!(
                         "About to lock installed logs mutex with {} log entries",
@@ -984,7 +1039,7 @@ impl BrewstyApp {
             let path_display = path.display().to_string();
 
             thread::spawn(move || {
-                let result = executor.execute(async move { use_case.execute(&path).await });
+                let result: anyhow::Result<crate::domain::entities::PackageList> = executor.execute(async move { use_case.execute(&path).await });
 
                 let mut log_vec = Vec::new();
                 match result {
@@ -1580,13 +1635,13 @@ impl BrewstyApp {
         if let Some((package_name, _success, message)) = result.pin_completed {
             self.packages_in_operation.remove(&package_name);
             self.status_message = message;
-            self.load_installed_packages();
+            self.load_installed_packages(true);
         }
 
         if let Some((package_name, _success, message)) = result.unpin_completed {
             self.packages_in_operation.remove(&package_name);
             self.status_message = message;
-            self.load_installed_packages();
+            self.load_installed_packages(true);
         }
 
         if let Some(services) = result.services {
@@ -1633,7 +1688,7 @@ impl BrewstyApp {
             self.status_message = message;
             if success {
                 // Reload installed packages after successful import
-                self.load_installed_packages();
+                self.load_installed_packages(true);
             }
         }
 
@@ -1698,7 +1753,11 @@ impl eframe::App for BrewstyApp {
 
         if !self.initialized {
             self.initialized = true;
-            self.load_installed_packages();
+            // Only load installed packages if auto-update is enabled
+            self.load_installed_packages(self.config.auto_update_check);
+            
+            // Apply initial theme
+            self.apply_theme(ctx);
         }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -1716,7 +1775,7 @@ impl eframe::App for BrewstyApp {
                 {
                     self.tab_manager.switch_to(Tab::Installed);
                     if !self.tab_manager.is_loaded(Tab::Installed) {
-                        self.load_installed_packages();
+                        self.load_installed_packages(true);
                     }
                 }
                 if ui
@@ -1813,7 +1872,7 @@ impl eframe::App for BrewstyApp {
                         self.filter_state.set_show_casks(show_casks);
                         ui.separator();
                         if ui.button("Refresh").clicked() {
-                            self.load_installed_packages();
+                            self.load_installed_packages(true);
                         }
                     });
 
@@ -1982,77 +2041,114 @@ impl eframe::App for BrewstyApp {
                 }
 
                 Tab::Settings => {
-                    ui.heading("Settings & Maintenance");
-                    ui.separator();
+                    tracing::trace!("Rendering Settings Tab");
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        ui.heading("Settings & Maintenance");
+                        ui.separator();
 
-                    ui.group(|ui| {
-                        ui.heading("Log Levels");
-                        ui.horizontal(|ui| {
-                            let mut debug = self.log_manager.is_level_visible(LogLevel::Debug);
-                            let mut info = self.log_manager.is_level_visible(LogLevel::Info);
-                            let mut warn = self.log_manager.is_level_visible(LogLevel::Warn);
-                            let mut error = self.log_manager.is_level_visible(LogLevel::Error);
+                        ui.group(|ui| {
+                            ui.heading("General");
+                            
+                            ui.horizontal(|ui| {
+                                ui.label("Theme:");
+                                egui::ComboBox::from_id_source("theme_combo")
+                                    .selected_text(format!("{:?}", self.config.theme))
+                                    .show_ui(ui, |ui| {
+                                        if ui.selectable_value(&mut self.config.theme, ThemeMode::System, "System").clicked() {
+                                            self.save_config();
+                                            self.apply_theme(ui.ctx());
+                                        }
+                                        if ui.selectable_value(&mut self.config.theme, ThemeMode::Light, "Light").clicked() {
+                                            self.save_config();
+                                            self.apply_theme(ui.ctx());
+                                        }
+                                        if ui.selectable_value(&mut self.config.theme, ThemeMode::Dark, "Dark").clicked() {
+                                            self.save_config();
+                                            self.apply_theme(ui.ctx());
+                                        }
+                                    });
+                            });
 
-                            if ui.checkbox(&mut debug, "Debug").changed() {
-                                self.log_manager.set_level_visible(LogLevel::Debug, debug);
+                            if ui.checkbox(&mut self.config.auto_update_check, "Check for updates on startup").changed() {
+                                self.save_config();
                             }
-                            if ui.checkbox(&mut info, "Info").changed() {
-                                self.log_manager.set_level_visible(LogLevel::Info, info);
-                            }
-                            if ui.checkbox(&mut warn, "Warn").changed() {
-                                self.log_manager.set_level_visible(LogLevel::Warn, warn);
-                            }
-                            if ui.checkbox(&mut error, "Error").changed() {
-                                self.log_manager.set_level_visible(LogLevel::Error, error);
+
+                            if ui.checkbox(&mut self.config.confirm_before_actions, "Confirm before dangerous actions").changed() {
+                                self.save_config();
                             }
                         });
-                    });
-
-                    ui.separator();
-                    ui.heading("Maintenance");
-
-                    ui.vertical_centered(|ui| {
-                        if ui.button("Clean Cache").clicked() {
-                            self.show_cleanup_preview(CleanupType::Cache);
-                        }
-                        ui.label("Remove old downloads from cache");
 
                         ui.add_space(10.0);
 
-                        if ui.button("Cleanup Old Versions").clicked() {
-                            self.show_cleanup_preview(CleanupType::OldVersions);
-                        }
-                        ui.label("Remove old versions of installed packages");
+                        ui.group(|ui| {
+                            ui.heading("Log Levels");
+                            ui.horizontal(|ui| {
+                                let mut debug = self.log_manager.is_level_visible(LogLevel::Debug);
+                                let mut info = self.log_manager.is_level_visible(LogLevel::Info);
+                                let mut warn = self.log_manager.is_level_visible(LogLevel::Warn);
+                                let mut error = self.log_manager.is_level_visible(LogLevel::Error);
 
-                        ui.add_space(10.0);
+                                if ui.checkbox(&mut debug, "Debug").changed() {
+                                    self.log_manager.set_level_visible(LogLevel::Debug, debug);
+                                }
+                                if ui.checkbox(&mut info, "Info").changed() {
+                                    self.log_manager.set_level_visible(LogLevel::Info, info);
+                                }
+                                if ui.checkbox(&mut warn, "Warn").changed() {
+                                    self.log_manager.set_level_visible(LogLevel::Warn, warn);
+                                }
+                                if ui.checkbox(&mut error, "Error").changed() {
+                                    self.log_manager.set_level_visible(LogLevel::Error, error);
+                                }
+                            });
+                        });
 
-                        if ui.button("Update All Packages").clicked() {
-                            self.handle_update_all();
-                        }
-                        ui.label("Update all installed packages");
-                    });
+                        ui.separator();
+                        ui.heading("Maintenance");
 
-                    ui.separator();
-                    ui.heading("Package List Management");
+                        ui.vertical_centered(|ui| {
+                            if ui.button("Clean Cache").clicked() {
+                                self.show_cleanup_preview(CleanupType::Cache);
+                            }
+                            ui.label("Remove old downloads from cache");
 
-                    ui.vertical_centered(|ui| {
-                        if ui
-                            .add_enabled(!self.loading_export, egui::Button::new("Export Packages"))
-                            .clicked()
-                        {
-                            self.handle_export_packages();
-                        }
-                        ui.label("Export installed packages to JSON");
+                            ui.add_space(10.0);
 
-                        ui.add_space(10.0);
+                            if ui.button("Cleanup Old Versions").clicked() {
+                                self.show_cleanup_preview(CleanupType::OldVersions);
+                            }
+                            ui.label("Remove old versions of installed packages");
 
-                        if ui
-                            .add_enabled(!self.loading_import, egui::Button::new("Import Packages"))
-                            .clicked()
-                        {
-                            self.handle_import_packages();
-                        }
-                        ui.label("Import and install packages from JSON");
+                            ui.add_space(10.0);
+
+                            if ui.button("Update All Packages").clicked() {
+                                self.handle_update_all();
+                            }
+                            ui.label("Update all installed packages");
+                        });
+
+                        ui.separator();
+                        ui.heading("Package List Management");
+
+                        ui.vertical_centered(|ui| {
+                            if ui
+                                .add_enabled(!self.loading_export, egui::Button::new("Export Packages"))
+                                .clicked()
+                            {
+                                self.handle_export_packages();
+                            }
+                            ui.label("Export installed packages to JSON");
+
+                            ui.add_space(10.0);
+
+                            if ui
+                                .add_enabled(!self.loading_import, egui::Button::new("Import Packages"))
+                                .clicked()
+                            {
+                                self.handle_import_packages();
+                            }
+                            ui.label("Import and install packages from JSON");
+                        });
                     });
                 }
 
