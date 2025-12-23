@@ -24,6 +24,7 @@ pub struct TabManager {
     tab_states: HashMap<Tab, TabState>,
 }
 
+#[allow(dead_code)]
 impl TabManager {
     pub fn new() -> Self {
         let mut tab_states = HashMap::new();

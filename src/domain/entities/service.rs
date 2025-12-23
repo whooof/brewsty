@@ -8,6 +8,7 @@ pub enum ServiceStatus {
     Unknown,
 }
 
+#[allow(dead_code)]
 impl ServiceStatus {
     pub fn is_running(&self) -> bool {
         matches!(self, ServiceStatus::Started)

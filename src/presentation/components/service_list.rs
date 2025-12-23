@@ -6,6 +6,7 @@ pub struct ServiceList {
     selected_service: Option<String>,
 }
 
+#[allow(dead_code)]
 impl ServiceList {
     pub fn new() -> Self {
         Self {

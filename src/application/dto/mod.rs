@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::domain::entities::Package;
 use serde::{Deserialize, Serialize};
 

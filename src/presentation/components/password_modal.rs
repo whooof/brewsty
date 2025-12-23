@@ -9,6 +9,7 @@ pub struct PasswordModal {
     show_password: bool,
 }
 
+#[allow(dead_code)]
 impl PasswordModal {
     pub fn new() -> Self {
         Self {

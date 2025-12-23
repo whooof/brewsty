@@ -1,4 +1,4 @@
-use crate::domain::entities::{Package, PackageList};
+use crate::domain::entities::PackageList;
 use anyhow::Result;
 use async_trait::async_trait;
 

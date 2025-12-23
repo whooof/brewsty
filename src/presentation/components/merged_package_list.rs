@@ -10,6 +10,7 @@ pub struct MergedPackageList {
     outdated_selection: SelectionState,
 }
 
+#[allow(dead_code)]
 impl MergedPackageList {
     pub fn new() -> Self {
         Self {
@@ -150,8 +151,7 @@ impl MergedPackageList {
 
                     egui::Grid::new("outdated_grid")
                         .striped(true)
-                        .spacing([10.0, 8.0])
-                        .min_col_width(ui.available_width() / 6.0)
+                        .spacing([25.0, 10.0])
                         .show(ui, |ui| {
                             ui.heading("");
                             ui.heading("Name");
@@ -284,8 +284,7 @@ impl MergedPackageList {
 
                     egui::Grid::new("installed_grid")
                         .striped(true)
-                        .spacing([10.0, 8.0])
-                        .min_col_width(ui.available_width() / 5.0)
+                        .spacing([25.0, 10.0])
                         .show(ui, |ui| {
                             ui.heading("Name");
                             ui.heading("Version");

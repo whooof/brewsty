@@ -1,5 +1,5 @@
 use crate::application::UseCaseContainer;
-use crate::domain::entities::{Package, PackageType, Service, AppConfig, ThemeMode};
+use crate::domain::entities::{Package, PackageType, AppConfig, ThemeMode};
 use crate::presentation::components::{
     CleanupAction, CleanupModal, CleanupType, FilterState, InfoModal, LogLevel, LogManager,
     MergedPackageList, PackageList, PasswordModal, ServiceList, Tab, TabManager,
@@ -48,7 +48,6 @@ pub struct BrewstyApp {
     current_install_package: Option<String>,
     current_uninstall_package: Option<String>,
     current_update_package: Option<String>,
-    current_update_selected_packages: Option<Vec<String>>,
     pending_updates: Vec<Package>,
     pending_operation: Option<PendingOperation>,
     packages_in_operation: std::collections::HashSet<String>,
@@ -112,7 +111,6 @@ impl BrewstyApp {
             current_install_package: None,
             current_uninstall_package: None,
             current_update_package: None,
-            current_update_selected_packages: None,
             pending_updates: Vec::new(),
             pending_operation: None,
             packages_in_operation: std::collections::HashSet::new(),
@@ -133,12 +131,7 @@ impl BrewstyApp {
     }
 
     fn apply_theme(&self, ctx: &egui::Context) {
-        let visuals = match self.config.theme {
-            ThemeMode::System => egui::Visuals::default(),
-            ThemeMode::Light => egui::Visuals::light(),
-            ThemeMode::Dark => egui::Visuals::dark(),
-        };
-        ctx.set_visuals(visuals);
+        crate::presentation::style::configure_style(ctx, self.config.theme);
     }
 
     fn load_installed_packages(&mut self, include_outdated: bool) {
@@ -440,20 +433,7 @@ impl BrewstyApp {
             || error_msg.contains("sudo: a password is required")
     }
 
-    fn check_and_handle_password_error(&mut self, error_msg: &str, operation: PendingOperation) {
-        // Check if the error indicates a password is needed or incorrect
-        if self.is_password_error(error_msg) {
-            let op_name = match &operation {
-                PendingOperation::Install(_) => "Install".to_string(),
-                PendingOperation::Uninstall(_) => "Uninstall".to_string(),
-            };
-            self.pending_operation = Some(operation);
-            self.password_modal.show(op_name);
-            self.log_manager
-                .push("Password required. Please enter your administrator password.".to_string());
-            tracing::info!("Password required for operation");
-        }
-    }
+
 
     fn retry_with_password(&mut self, password: &str) {
         if let Some(operation) = self.pending_operation.take() {
@@ -1761,6 +1741,7 @@ impl eframe::App for BrewstyApp {
         }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+            ui.add_space(8.0);
             ui.horizontal(|ui| {
                 ui.heading("🍺 Brewsty");
                 ui.label(format!("v{}", env!("CARGO_PKG_VERSION")));
@@ -1809,6 +1790,7 @@ impl eframe::App for BrewstyApp {
                     self.tab_manager.switch_to(Tab::Log);
                 }
             });
+            ui.add_space(8.0);
         });
 
         egui::TopBottomPanel::bottom("bottom_panel")
@@ -2051,7 +2033,7 @@ impl eframe::App for BrewstyApp {
                             
                             ui.horizontal(|ui| {
                                 ui.label("Theme:");
-                                egui::ComboBox::from_id_source("theme_combo")
+                                egui::ComboBox::new("theme_combo", "")
                                     .selected_text(format!("{:?}", self.config.theme))
                                     .show_ui(ui, |ui| {
                                         if ui.selectable_value(&mut self.config.theme, ThemeMode::System, "System").clicked() {

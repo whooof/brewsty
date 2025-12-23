@@ -5,6 +5,7 @@ pub struct SelectionState {
     selected_packages: HashSet<String>,
 }
 
+#[allow(dead_code)]
 impl SelectionState {
     pub fn new() -> Self {
         Self {
