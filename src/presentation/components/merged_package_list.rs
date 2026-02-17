@@ -406,7 +406,7 @@ impl MergedPackageList {
                             .strong(),
                     )
                     .fill(Color32::from_rgb(0, 122, 255))
-                    .rounding(8.0)
+                    .corner_radius(8.0)
                     .min_size(egui::vec2(120.0, 40.0));
 
                     if ui.add(button).clicked() {

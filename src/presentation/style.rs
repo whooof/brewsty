@@ -1,5 +1,5 @@
 use crate::domain::entities::ThemeMode;
-use egui::{Color32, Context, FontFamily, FontId, Rounding, Stroke, TextStyle, Visuals};
+use egui::{Color32, Context, CornerRadius, FontFamily, FontId, Stroke, TextStyle, Visuals};
 
 /// Configures egui style with custom fonts, spacing, and theme-aware colors.
 pub fn configure_style(ctx: &Context, theme: ThemeMode) {
@@ -27,7 +27,7 @@ pub fn configure_style(ctx: &Context, theme: ThemeMode) {
     .into();
 
     style.spacing.item_spacing = egui::vec2(10.0, 10.0);
-    style.spacing.window_margin = egui::Margin::same(12.0);
+    style.spacing.window_margin = egui::Margin::same(12);
     style.spacing.button_padding = egui::vec2(12.0, 8.0);
     style.spacing.indent = 24.0;
     style.spacing.interact_size = egui::vec2(60.0, 30.0);
@@ -39,13 +39,14 @@ pub fn configure_style(ctx: &Context, theme: ThemeMode) {
     };
 
     // Rounded corners
-    visuals.widgets.noninteractive.rounding = Rounding::same(8.0);
-    visuals.widgets.inactive.rounding = Rounding::same(8.0);
-    visuals.widgets.hovered.rounding = Rounding::same(8.0);
-    visuals.widgets.active.rounding = Rounding::same(8.0);
-    visuals.widgets.open.rounding = Rounding::same(8.0);
-    visuals.window_rounding = Rounding::same(12.0);
-    visuals.menu_rounding = Rounding::same(8.0);
+    let corner_8 = CornerRadius::same(8);
+    visuals.widgets.noninteractive.corner_radius = corner_8;
+    visuals.widgets.inactive.corner_radius = corner_8;
+    visuals.widgets.hovered.corner_radius = corner_8;
+    visuals.widgets.active.corner_radius = corner_8;
+    visuals.widgets.open.corner_radius = corner_8;
+    visuals.window_corner_radius = CornerRadius::same(12);
+    visuals.menu_corner_radius = corner_8;
 
     if visuals.dark_mode {
         visuals.widgets.noninteractive.bg_fill = Color32::from_gray(32);
