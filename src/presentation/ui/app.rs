@@ -5,7 +5,7 @@ use crate::presentation::components::{
     CleanupAction, CleanupModal, CleanupType, FilterState, InfoModal, LogManager,
     MergedPackageList, PackageList, PasswordModal, ServiceList, Tab, TabManager,
 };
-use crate::presentation::services::{AsyncExecutor, AsyncTask, AsyncTaskManager};
+use crate::presentation::services::{AsyncExecutor, AsyncTask, AsyncTaskManager, TaskSharedState};
 use crate::presentation::ui::tabs::installed::{InstalledAction, InstalledTab};
 use crate::presentation::ui::tabs::log::{LogAction, LogTab};
 use crate::presentation::ui::tabs::search::{SearchAction, SearchTab};
@@ -496,55 +496,24 @@ impl BrewstyApp {
         self.packages_in_operation.insert(package_name.clone());
         self.status_message = format!("Installing {}...", package.name);
 
-        let package_type = package.package_type.clone();
-        let initial_msg = format!("Installing package: {} ({:?})", package_name, package_type);
+        let initial_msg = format!("Installing package: {} ({:?})", package_name, package.package_type);
         self.log_manager.push(initial_msg.clone());
         tracing::info!("{}", initial_msg);
 
-        let success = Arc::new(Mutex::new(None));
-        let logs = Arc::new(Mutex::new(Vec::new()));
-        let message = Arc::new(Mutex::new(String::new()));
+        let shared = TaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::Install {
-            success: Arc::clone(&success),
-            logs: Arc::clone(&logs),
-            message: Arc::clone(&message),
+            success: Arc::clone(&shared.success),
+            logs: Arc::clone(&shared.logs),
+            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.install);
 
         self.executor.spawn(async move {
-            let result = use_case.execute(package).await;
-
-            let mut log_vec = Vec::new();
-            match result {
-                Ok(_) => {
-                    let msg = format!("Successfully installed {}", package_name);
-                    log_vec.push(msg.clone());
-                    tracing::info!("{}", msg);
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(true);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = format!("{} installed successfully", package_name);
-                    }
-                }
-                Err(e) => {
-                    let error_str = e.to_string();
-                    let msg = format!("Error installing {}: {}", package_name, error_str);
-                    log_vec.push(msg.clone());
-                    tracing::error!("{}", msg);
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(false);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = error_str;
-                    }
-                }
-            }
-
-            if let Ok(mut logs_guard) = logs.lock() {
-                *logs_guard = log_vec;
+            match use_case.execute(package).await {
+                Ok(_) => shared.set_success(format!("Successfully installed {}", package_name)),
+                Err(e) => shared.set_failure(format!("Error installing {}: {}", package_name, e)),
             }
         });
     }
@@ -560,32 +529,27 @@ impl BrewstyApp {
         self.current_install_package = Some(package_name.clone());
         self.status_message = format!("Installing {} (with password)...", package.name);
 
-        let package_type = package.package_type.clone();
         let initial_msg = format!(
             "Retrying install with password: {} ({:?})",
-            package_name, package_type
+            package_name, package.package_type
         );
         self.log_manager.push(initial_msg.clone());
         tracing::info!("{}", initial_msg);
 
-        let success = Arc::new(Mutex::new(None));
-        let logs = Arc::new(Mutex::new(Vec::new()));
-        let message = Arc::new(Mutex::new(String::new()));
+        let shared = TaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::Install {
-            success: Arc::clone(&success),
-            logs: Arc::clone(&logs),
-            message: Arc::clone(&message),
+            success: Arc::clone(&shared.success),
+            logs: Arc::clone(&shared.logs),
+            message: Arc::clone(&shared.message),
         });
 
-        let name = package_name.clone();
-        let pkg_type = package_type.clone();
+        let pkg_type = package.package_type;
 
         self.executor.spawn(async move {
             use crate::infrastructure::brew::command::BrewCommand;
 
-            let mut log_vec = Vec::new();
-
+            let name = package_name.clone();
             let brew_result = tokio::task::spawn_blocking(move || {
                 BrewCommand::install_package_with_password(&name, pkg_type, &password)
             })
@@ -597,33 +561,8 @@ impl BrewstyApp {
             };
 
             match result {
-                Ok(_) => {
-                    let msg = format!("Successfully installed {}", package_name);
-                    log_vec.push(msg.clone());
-                    tracing::info!("{}", msg);
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(true);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = format!("{} installed successfully", package_name);
-                    }
-                }
-                Err(e) => {
-                    let error_str = e.to_string();
-                    let msg = format!("Error installing {}: {}", package_name, error_str);
-                    log_vec.push(msg.clone());
-                    tracing::error!("{}", msg);
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(false);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = error_str;
-                    }
-                }
-            }
-
-            if let Ok(mut logs_guard) = logs.lock() {
-                *logs_guard = log_vec;
+                Ok(_) => shared.set_success(format!("Successfully installed {}", package_name)),
+                Err(e) => shared.set_failure(format!("Error installing {}: {}", package_name, e)),
             }
         });
     }
@@ -640,58 +579,27 @@ impl BrewstyApp {
         self.packages_in_operation.insert(package_name.clone());
         self.status_message = format!("Uninstalling {}...", package.name);
 
-        let package_type = package.package_type.clone();
         let initial_msg = format!(
             "Uninstalling package: {} ({:?})",
-            package_name, package_type
+            package_name, package.package_type
         );
         self.log_manager.push(initial_msg.clone());
         tracing::info!("{}", initial_msg);
 
-        let success = Arc::new(Mutex::new(None));
-        let logs = Arc::new(Mutex::new(Vec::new()));
-        let message = Arc::new(Mutex::new(String::new()));
+        let shared = TaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::Uninstall {
-            success: Arc::clone(&success),
-            logs: Arc::clone(&logs),
-            message: Arc::clone(&message),
+            success: Arc::clone(&shared.success),
+            logs: Arc::clone(&shared.logs),
+            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.uninstall);
 
         self.executor.spawn(async move {
-            let result = use_case.execute(package).await;
-
-            let mut log_vec = Vec::new();
-            match result {
-                Ok(_) => {
-                    let msg = format!("Successfully uninstalled {}", package_name);
-                    log_vec.push(msg.clone());
-                    tracing::info!("{}", msg);
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(true);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = format!("{} uninstalled successfully", package_name);
-                    }
-                }
-                Err(e) => {
-                    let error_str = e.to_string();
-                    let msg = format!("Error uninstalling {}: {}", package_name, error_str);
-                    log_vec.push(msg.clone());
-                    tracing::error!("{}", msg);
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(false);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = error_str;
-                    }
-                }
-            }
-
-            if let Ok(mut logs_guard) = logs.lock() {
-                *logs_guard = log_vec;
+            match use_case.execute(package).await {
+                Ok(_) => shared.set_success(format!("Successfully uninstalled {}", package_name)),
+                Err(e) => shared.set_failure(format!("Error uninstalling {}: {}", package_name, e)),
             }
         });
     }
@@ -707,32 +615,27 @@ impl BrewstyApp {
         self.current_uninstall_package = Some(package_name.clone());
         self.status_message = format!("Uninstalling {} (with password)...", package.name);
 
-        let package_type = package.package_type.clone();
         let initial_msg = format!(
             "Retrying uninstall with password: {} ({:?})",
-            package_name, package_type
+            package_name, package.package_type
         );
         self.log_manager.push(initial_msg.clone());
         tracing::info!("{}", initial_msg);
 
-        let success = Arc::new(Mutex::new(None));
-        let logs = Arc::new(Mutex::new(Vec::new()));
-        let message = Arc::new(Mutex::new(String::new()));
+        let shared = TaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::Uninstall {
-            success: Arc::clone(&success),
-            logs: Arc::clone(&logs),
-            message: Arc::clone(&message),
+            success: Arc::clone(&shared.success),
+            logs: Arc::clone(&shared.logs),
+            message: Arc::clone(&shared.message),
         });
 
-        let name = package_name.clone();
-        let pkg_type = package_type.clone();
+        let pkg_type = package.package_type;
 
         self.executor.spawn(async move {
             use crate::infrastructure::brew::command::BrewCommand;
 
-            let mut log_vec = Vec::new();
-
+            let name = package_name.clone();
             let brew_result = tokio::task::spawn_blocking(move || {
                 BrewCommand::uninstall_package_with_password(&name, pkg_type, &password)
             })
@@ -744,33 +647,8 @@ impl BrewstyApp {
             };
 
             match result {
-                Ok(_) => {
-                    let msg = format!("Successfully uninstalled {}", package_name);
-                    log_vec.push(msg.clone());
-                    tracing::info!("{}", msg);
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(true);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = format!("{} uninstalled successfully", package_name);
-                    }
-                }
-                Err(e) => {
-                    let error_str = e.to_string();
-                    let msg = format!("Error uninstalling {}: {}", package_name, error_str);
-                    log_vec.push(msg.clone());
-                    tracing::error!("{}", msg);
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(false);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = error_str;
-                    }
-                }
-            }
-
-            if let Ok(mut logs_guard) = logs.lock() {
-                *logs_guard = log_vec;
+                Ok(_) => shared.set_success(format!("Successfully uninstalled {}", package_name)),
+                Err(e) => shared.set_failure(format!("Error uninstalling {}: {}", package_name, e)),
             }
         });
     }
@@ -787,54 +665,24 @@ impl BrewstyApp {
         self.packages_in_operation.insert(package_name.clone());
         self.status_message = format!("Updating {}...", package.name);
 
-        let package_type = package.package_type.clone();
-        let initial_msg = format!("Updating package: {} ({:?})", package_name, package_type);
+        let initial_msg = format!("Updating package: {} ({:?})", package_name, package.package_type);
         self.log_manager.push(initial_msg.clone());
         tracing::info!("{}", initial_msg);
 
-        let success = Arc::new(Mutex::new(None));
-        let logs = Arc::new(Mutex::new(Vec::new()));
-        let message = Arc::new(Mutex::new(String::new()));
+        let shared = TaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::Update {
-            success: Arc::clone(&success),
-            logs: Arc::clone(&logs),
-            message: Arc::clone(&message),
+            success: Arc::clone(&shared.success),
+            logs: Arc::clone(&shared.logs),
+            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.update);
 
         self.executor.spawn(async move {
-            let result = use_case.execute(&package).await;
-
-            let mut log_vec = Vec::new();
-            match result {
-                Ok(_) => {
-                    let msg = format!("Successfully updated {}", package_name);
-                    log_vec.push(msg.clone());
-                    tracing::info!("{}", msg);
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(true);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = format!("{} updated successfully", package_name);
-                    }
-                }
-                Err(e) => {
-                    let msg = format!("Error updating {}: {}", package_name, e);
-                    log_vec.push(msg.clone());
-                    tracing::error!("{}", msg);
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(false);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = msg;
-                    }
-                }
-            }
-
-            if let Ok(mut logs_guard) = logs.lock() {
-                *logs_guard = log_vec;
+            match use_case.execute(&package).await {
+                Ok(_) => shared.set_success(format!("Successfully updated {}", package_name)),
+                Err(e) => shared.set_failure(format!("Error updating {}: {}", package_name, e)),
             }
         });
     }
@@ -845,51 +693,25 @@ impl BrewstyApp {
         self.status_message = format!("Pinning {}...", package.name);
 
         let package_name = package.name.clone();
-        let package_type = package.package_type.clone();
-        let initial_msg = format!("Pinning package: {} ({:?})", package_name, package_type);
+        let initial_msg = format!("Pinning package: {} ({:?})", package_name, package.package_type);
         self.log_manager.push(initial_msg.clone());
         tracing::info!("{}", initial_msg);
 
-        let success = Arc::new(Mutex::new(None));
-        let logs = Arc::new(Mutex::new(Vec::new()));
-        let message = Arc::new(Mutex::new(String::new()));
+        let shared = TaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::Pin {
             package_name: package.name.clone(),
-            success: Arc::clone(&success),
-            logs: Arc::clone(&logs),
-            message: Arc::clone(&message),
+            success: Arc::clone(&shared.success),
+            logs: Arc::clone(&shared.logs),
+            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.pin);
-        let package_clone = package.clone();
 
         self.executor.spawn(async move {
-            match use_case.execute(package_clone).await {
-                Ok(_) => {
-                    let msg = format!("Successfully pinned {}", package_name);
-                    if let Ok(mut logs_guard) = logs.lock() {
-                        *logs_guard = vec![msg.clone()];
-                    }
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(true);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = format!("{} pinned successfully", package_name);
-                    }
-                }
-                Err(e) => {
-                    let msg = format!("Error pinning {}: {}", package_name, e);
-                    if let Ok(mut logs_guard) = logs.lock() {
-                        *logs_guard = vec![msg.clone()];
-                    }
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(false);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = msg;
-                    }
-                }
+            match use_case.execute(package).await {
+                Ok(_) => shared.set_success(format!("Successfully pinned {}", package_name)),
+                Err(e) => shared.set_failure(format!("Error pinning {}: {}", package_name, e)),
             }
         });
     }
@@ -900,51 +722,25 @@ impl BrewstyApp {
         self.status_message = format!("Unpinning {}...", package.name);
 
         let package_name = package.name.clone();
-        let package_type = package.package_type.clone();
-        let initial_msg = format!("Unpinning package: {} ({:?})", package_name, package_type);
+        let initial_msg = format!("Unpinning package: {} ({:?})", package_name, package.package_type);
         self.log_manager.push(initial_msg.clone());
         tracing::info!("{}", initial_msg);
 
-        let success = Arc::new(Mutex::new(None));
-        let logs = Arc::new(Mutex::new(Vec::new()));
-        let message = Arc::new(Mutex::new(String::new()));
+        let shared = TaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::Unpin {
             package_name: package.name.clone(),
-            success: Arc::clone(&success),
-            logs: Arc::clone(&logs),
-            message: Arc::clone(&message),
+            success: Arc::clone(&shared.success),
+            logs: Arc::clone(&shared.logs),
+            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.unpin);
-        let package_clone = package.clone();
 
         self.executor.spawn(async move {
-            match use_case.execute(package_clone).await {
-                Ok(_) => {
-                    let msg = format!("Successfully unpinned {}", package_name);
-                    if let Ok(mut logs_guard) = logs.lock() {
-                        *logs_guard = vec![msg.clone()];
-                    }
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(true);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = format!("{} unpinned successfully", package_name);
-                    }
-                }
-                Err(e) => {
-                    let msg = format!("Error unpinning {}: {}", package_name, e);
-                    if let Ok(mut logs_guard) = logs.lock() {
-                        *logs_guard = vec![msg.clone()];
-                    }
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(false);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = msg;
-                    }
-                }
+            match use_case.execute(package).await {
+                Ok(_) => shared.set_success(format!("Successfully unpinned {}", package_name)),
+                Err(e) => shared.set_failure(format!("Error unpinning {}: {}", package_name, e)),
             }
         });
     }
@@ -1000,46 +796,22 @@ impl BrewstyApp {
         self.log_manager.push(initial_msg.clone());
         tracing::info!("{}", initial_msg);
 
-        let success = Arc::new(Mutex::new(None));
-        let logs = Arc::new(Mutex::new(Vec::new()));
-        let message = Arc::new(Mutex::new(String::new()));
+        let shared = TaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::StartService {
             service_name: service_name.clone(),
-            success: Arc::clone(&success),
-            logs: Arc::clone(&logs),
-            message: Arc::clone(&message),
+            success: Arc::clone(&shared.success),
+            logs: Arc::clone(&shared.logs),
+            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.start_service);
-        let service_name_clone = service_name.clone();
+        let name = service_name.clone();
 
         self.executor.spawn(async move {
-            match use_case.execute(&service_name_clone).await {
-                Ok(_) => {
-                    let msg = format!("Successfully started service {}", service_name);
-                    if let Ok(mut logs_guard) = logs.lock() {
-                        *logs_guard = vec![msg.clone()];
-                    }
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(true);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = msg;
-                    }
-                }
-                Err(e) => {
-                    let msg = format!("Error starting service {}: {}", service_name, e);
-                    if let Ok(mut logs_guard) = logs.lock() {
-                        *logs_guard = vec![msg.clone()];
-                    }
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(false);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = msg;
-                    }
-                }
+            match use_case.execute(&name).await {
+                Ok(_) => shared.set_success(format!("Successfully started service {}", service_name)),
+                Err(e) => shared.set_failure(format!("Error starting service {}: {}", service_name, e)),
             }
         });
     }
@@ -1052,46 +824,22 @@ impl BrewstyApp {
         self.log_manager.push(initial_msg.clone());
         tracing::info!("{}", initial_msg);
 
-        let success = Arc::new(Mutex::new(None));
-        let logs = Arc::new(Mutex::new(Vec::new()));
-        let message = Arc::new(Mutex::new(String::new()));
+        let shared = TaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::StopService {
             service_name: service_name.clone(),
-            success: Arc::clone(&success),
-            logs: Arc::clone(&logs),
-            message: Arc::clone(&message),
+            success: Arc::clone(&shared.success),
+            logs: Arc::clone(&shared.logs),
+            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.stop_service);
-        let service_name_clone = service_name.clone();
+        let name = service_name.clone();
 
         self.executor.spawn(async move {
-            match use_case.execute(&service_name_clone).await {
-                Ok(_) => {
-                    let msg = format!("Successfully stopped service {}", service_name);
-                    if let Ok(mut logs_guard) = logs.lock() {
-                        *logs_guard = vec![msg.clone()];
-                    }
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(true);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = msg;
-                    }
-                }
-                Err(e) => {
-                    let msg = format!("Error stopping service {}: {}", service_name, e);
-                    if let Ok(mut logs_guard) = logs.lock() {
-                        *logs_guard = vec![msg.clone()];
-                    }
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(false);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = msg;
-                    }
-                }
+            match use_case.execute(&name).await {
+                Ok(_) => shared.set_success(format!("Successfully stopped service {}", service_name)),
+                Err(e) => shared.set_failure(format!("Error stopping service {}: {}", service_name, e)),
             }
         });
     }
@@ -1104,47 +852,23 @@ impl BrewstyApp {
         self.log_manager.push(initial_msg.clone());
         tracing::info!("{}", initial_msg);
 
-        let success = Arc::new(Mutex::new(None));
-        let logs = Arc::new(Mutex::new(Vec::new()));
-        let message = Arc::new(Mutex::new(String::new()));
+        let shared = TaskSharedState::new();
 
         self.task_manager
             .set_active_task(AsyncTask::RestartService {
                 service_name: service_name.clone(),
-                success: Arc::clone(&success),
-                logs: Arc::clone(&logs),
-                message: Arc::clone(&message),
+                success: Arc::clone(&shared.success),
+                logs: Arc::clone(&shared.logs),
+                message: Arc::clone(&shared.message),
             });
 
         let use_case = Arc::clone(&self.use_cases.restart_service);
-        let service_name_clone = service_name.clone();
+        let name = service_name.clone();
 
         self.executor.spawn(async move {
-            match use_case.execute(&service_name_clone).await {
-                Ok(_) => {
-                    let msg = format!("Successfully restarted service {}", service_name);
-                    if let Ok(mut logs_guard) = logs.lock() {
-                        *logs_guard = vec![msg.clone()];
-                    }
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(true);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = msg;
-                    }
-                }
-                Err(e) => {
-                    let msg = format!("Error restarting service {}: {}", service_name, e);
-                    if let Ok(mut logs_guard) = logs.lock() {
-                        *logs_guard = vec![msg.clone()];
-                    }
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(false);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = msg;
-                    }
-                }
+            match use_case.execute(&name).await {
+                Ok(_) => shared.set_success(format!("Successfully restarted service {}", service_name)),
+                Err(e) => shared.set_failure(format!("Error restarting service {}: {}", service_name, e)),
             }
         });
     }
@@ -1166,15 +890,13 @@ impl BrewstyApp {
                 .push(format!("Exporting packages to: {}", path.display()));
             tracing::info!("Exporting packages to: {}", path.display());
 
-            let success = Arc::new(Mutex::new(None));
-            let logs = Arc::new(Mutex::new(Vec::new()));
-            let message = Arc::new(Mutex::new(String::new()));
+            let shared = TaskSharedState::new();
 
             self.task_manager
                 .set_active_task(AsyncTask::ExportPackages {
-                    success: Arc::clone(&success),
-                    logs: Arc::clone(&logs),
-                    message: Arc::clone(&message),
+                    success: Arc::clone(&shared.success),
+                    logs: Arc::clone(&shared.logs),
+                    message: Arc::clone(&shared.message),
                 });
 
             let use_case = Arc::clone(&self.use_cases.export_packages);
@@ -1184,38 +906,13 @@ impl BrewstyApp {
                 let result: anyhow::Result<crate::domain::entities::PackageList> =
                     use_case.execute(&path).await;
 
-                let mut log_vec = Vec::new();
                 match result {
-                    Ok(package_list) => {
-                        let msg = format!(
-                            "Successfully exported {} packages to {}",
-                            package_list.total_count(),
-                            path_display
-                        );
-                        log_vec.push(msg.clone());
-                        tracing::info!("{}", msg);
-                        if let Ok(mut success_guard) = success.lock() {
-                            *success_guard = Some(true);
-                        }
-                        if let Ok(mut message_guard) = message.lock() {
-                            *message_guard = "Packages exported successfully".to_string();
-                        }
-                    }
-                    Err(e) => {
-                        let msg = format!("Error exporting packages: {}", e);
-                        log_vec.push(msg.clone());
-                        tracing::error!("{}", msg);
-                        if let Ok(mut success_guard) = success.lock() {
-                            *success_guard = Some(false);
-                        }
-                        if let Ok(mut message_guard) = message.lock() {
-                            *message_guard = msg;
-                        }
-                    }
-                }
-
-                if let Ok(mut logs_guard) = logs.lock() {
-                    *logs_guard = log_vec;
+                    Ok(package_list) => shared.set_success(format!(
+                        "Successfully exported {} packages to {}",
+                        package_list.total_count(),
+                        path_display
+                    )),
+                    Err(e) => shared.set_failure(format!("Error exporting packages: {}", e)),
                 }
             });
         }
@@ -1238,53 +935,25 @@ impl BrewstyApp {
                 .push(format!("Importing packages from: {}", path.display()));
             tracing::info!("Importing packages from: {}", path.display());
 
-            let success = Arc::new(Mutex::new(None));
-            let logs = Arc::new(Mutex::new(Vec::new()));
-            let message = Arc::new(Mutex::new(String::new()));
+            let shared = TaskSharedState::new();
 
             self.task_manager
                 .set_active_task(AsyncTask::ImportPackages {
-                    success: Arc::clone(&success),
-                    logs: Arc::clone(&logs),
-                    message: Arc::clone(&message),
+                    success: Arc::clone(&shared.success),
+                    logs: Arc::clone(&shared.logs),
+                    message: Arc::clone(&shared.message),
                 });
 
             let use_case = Arc::clone(&self.use_cases.import_packages);
             let path_display = path.display().to_string();
 
             self.executor.spawn(async move {
-                let result = use_case.execute(&path).await;
-
-                let mut log_vec = Vec::new();
-                match result {
-                    Ok(_) => {
-                        let msg = format!("Successfully imported packages from {}", path_display);
-                        log_vec.push(msg.clone());
-                        tracing::info!("{}", msg);
-                        if let Ok(mut success_guard) = success.lock() {
-                            *success_guard = Some(true);
-                        }
-                        if let Ok(mut message_guard) = message.lock() {
-                            *message_guard =
-                                "Packages imported successfully. Reloading package list..."
-                                    .to_string();
-                        }
-                    }
-                    Err(e) => {
-                        let msg = format!("Error importing packages: {}", e);
-                        log_vec.push(msg.clone());
-                        tracing::error!("{}", msg);
-                        if let Ok(mut success_guard) = success.lock() {
-                            *success_guard = Some(false);
-                        }
-                        if let Ok(mut message_guard) = message.lock() {
-                            *message_guard = msg;
-                        }
-                    }
-                }
-
-                if let Ok(mut logs_guard) = logs.lock() {
-                    *logs_guard = log_vec;
+                match use_case.execute(&path).await {
+                    Ok(_) => shared.set_success(format!(
+                        "Successfully imported packages from {}",
+                        path_display
+                    )),
+                    Err(e) => shared.set_failure(format!("Error importing packages: {}", e)),
                 }
             });
         }
@@ -1301,49 +970,20 @@ impl BrewstyApp {
         self.log_manager.push("Updating all packages".to_string());
         tracing::info!("Updating all packages");
 
-        let success = Arc::new(Mutex::new(None));
-        let logs = Arc::new(Mutex::new(Vec::new()));
-        let message = Arc::new(Mutex::new(String::new()));
+        let shared = TaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::UpdateAll {
-            success: Arc::clone(&success),
-            logs: Arc::clone(&logs),
-            message: Arc::clone(&message),
+            success: Arc::clone(&shared.success),
+            logs: Arc::clone(&shared.logs),
+            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.update_all);
 
         self.executor.spawn(async move {
-            let result = use_case.execute().await;
-
-            let mut log_vec = Vec::new();
-            match result {
-                Ok(_) => {
-                    let msg = "Successfully updated all packages".to_string();
-                    log_vec.push(msg.clone());
-                    tracing::info!("{}", msg);
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(true);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = "All packages updated successfully".to_string();
-                    }
-                }
-                Err(e) => {
-                    let msg = format!("Error updating all packages: {}", e);
-                    log_vec.push(msg.clone());
-                    tracing::error!("{}", msg);
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(false);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = msg;
-                    }
-                }
-            }
-
-            if let Ok(mut logs_guard) = logs.lock() {
-                *logs_guard = log_vec;
+            match use_case.execute().await {
+                Ok(_) => shared.set_success("Successfully updated all packages".to_string()),
+                Err(e) => shared.set_failure(format!("Error updating all packages: {}", e)),
             }
         });
     }
@@ -1395,49 +1035,20 @@ impl BrewstyApp {
         self.log_manager.push("Cleaning Homebrew cache".to_string());
         tracing::info!("Cleaning Homebrew cache");
 
-        let success = Arc::new(Mutex::new(None));
-        let logs = Arc::new(Mutex::new(Vec::new()));
-        let message = Arc::new(Mutex::new(String::new()));
+        let shared = TaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::CleanCache {
-            success: Arc::clone(&success),
-            logs: Arc::clone(&logs),
-            message: Arc::clone(&message),
+            success: Arc::clone(&shared.success),
+            logs: Arc::clone(&shared.logs),
+            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.clean_cache);
 
         self.executor.spawn(async move {
-            let result = use_case.execute().await;
-
-            let mut log_vec = Vec::new();
-            match result {
-                Ok(_) => {
-                    let msg = "Successfully cleaned cache".to_string();
-                    log_vec.push(msg.clone());
-                    tracing::info!("{}", msg);
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(true);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = "Cache cleaned successfully".to_string();
-                    }
-                }
-                Err(e) => {
-                    let msg = format!("Error cleaning cache: {}", e);
-                    log_vec.push(msg.clone());
-                    tracing::error!("{}", msg);
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(false);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = msg;
-                    }
-                }
-            }
-
-            if let Ok(mut logs_guard) = logs.lock() {
-                *logs_guard = log_vec;
+            match use_case.execute().await {
+                Ok(_) => shared.set_success("Successfully cleaned cache".to_string()),
+                Err(e) => shared.set_failure(format!("Error cleaning cache: {}", e)),
             }
         });
     }
@@ -1454,50 +1065,21 @@ impl BrewstyApp {
             .push("Cleaning up old versions".to_string());
         tracing::info!("Cleaning up old versions");
 
-        let success = Arc::new(Mutex::new(None));
-        let logs = Arc::new(Mutex::new(Vec::new()));
-        let message = Arc::new(Mutex::new(String::new()));
+        let shared = TaskSharedState::new();
 
         self.task_manager
             .set_active_task(AsyncTask::CleanupOldVersions {
-                success: Arc::clone(&success),
-                logs: Arc::clone(&logs),
-                message: Arc::clone(&message),
+                success: Arc::clone(&shared.success),
+                logs: Arc::clone(&shared.logs),
+                message: Arc::clone(&shared.message),
             });
 
         let use_case = Arc::clone(&self.use_cases.cleanup_old_versions);
 
         self.executor.spawn(async move {
-            let result = use_case.execute().await;
-
-            let mut log_vec = Vec::new();
-            match result {
-                Ok(_) => {
-                    let msg = "Successfully cleaned up old versions".to_string();
-                    log_vec.push(msg.clone());
-                    tracing::info!("{}", msg);
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(true);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = "Old versions cleaned up successfully".to_string();
-                    }
-                }
-                Err(e) => {
-                    let msg = format!("Error cleaning up old versions: {}", e);
-                    log_vec.push(msg.clone());
-                    tracing::error!("{}", msg);
-                    if let Ok(mut success_guard) = success.lock() {
-                        *success_guard = Some(false);
-                    }
-                    if let Ok(mut message_guard) = message.lock() {
-                        *message_guard = msg;
-                    }
-                }
-            }
-
-            if let Ok(mut logs_guard) = logs.lock() {
-                *logs_guard = log_vec;
+            match use_case.execute().await {
+                Ok(_) => shared.set_success("Successfully cleaned up old versions".to_string()),
+                Err(e) => shared.set_failure(format!("Error cleaning up old versions: {}", e)),
             }
         });
     }
