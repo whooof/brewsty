@@ -282,9 +282,10 @@ impl PackageRepository for BrewPackageRepository {
 
     async fn update_package(&self, package: &Package) -> Result<()> {
         let name = package.name.clone();
+        let package_type = package.package_type;
 
         let output =
-            tokio::task::spawn_blocking(move || BrewCommand::upgrade_package(&name)).await??;
+            tokio::task::spawn_blocking(move || BrewCommand::upgrade_package(&name, package_type)).await??;
 
         Self::log_brew_output(&output).await;
 

@@ -2,8 +2,17 @@ use crate::domain::{
     entities::PackageList,
     repositories::PackageListRepository,
 };
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use std::{path::Path, sync::Arc};
+
+/// Validates that a package name contains only safe characters
+fn is_valid_package_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 255
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '@' | '/' | '+'))
+}
 
 pub struct PackageListRepositoryUseCase {
     repository: Arc<dyn PackageListRepository>,
@@ -67,6 +76,13 @@ impl ImportPackages {
         // Deserialize from JSON
         let package_list: PackageList = serde_json::from_str(&json)
             .context("Failed to parse package list JSON")?;
+
+        // Validate all package names before installing anything
+        for item in package_list.formulae.iter().chain(package_list.casks.iter()) {
+            if !is_valid_package_name(&item.name) {
+                bail!("Invalid package name: {:?}", item.name);
+            }
+        }
         
         // Import the packages
         let _installed = self.use_case.repository().import_packages(&package_list).await?;

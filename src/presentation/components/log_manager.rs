@@ -26,20 +26,13 @@ impl LogLevel {
 
 pub struct LogEntry {
     pub message: String,
-    pub timestamp: std::time::SystemTime,
+    pub timestamp: chrono::DateTime<chrono::Local>,
     pub level: LogLevel,
 }
 
 impl LogEntry {
     pub fn format_timestamp(&self) -> String {
-        let timestamp = self
-            .timestamp
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default();
-        let hours = (timestamp.as_secs() / 3600) % 24;
-        let minutes = (timestamp.as_secs() / 60) % 60;
-        let seconds = timestamp.as_secs() % 60;
-        format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+        self.timestamp.format("%H:%M:%S").to_string()
     }
 }
 
@@ -72,7 +65,7 @@ impl LogManager {
         }
         self.logs.push_back(LogEntry {
             message,
-            timestamp: std::time::SystemTime::now(),
+            timestamp: chrono::Local::now(),
             level,
         });
     }

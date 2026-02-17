@@ -54,6 +54,7 @@ pub struct BrewstyApp {
     current_update_package: Option<String>,
     pending_updates: Vec<Package>,
     pending_operation: Option<PendingOperation>,
+    confirm_action: Option<ConfirmAction>,
     packages_in_operation: std::collections::HashSet<String>,
     services_in_operation: std::collections::HashSet<String>,
 
@@ -71,6 +72,14 @@ pub struct BrewstyApp {
 enum PendingOperation {
     Install(Package),
     Uninstall(Package),
+}
+
+/// Action awaiting user confirmation via dialog
+#[derive(Clone, Debug)]
+enum ConfirmAction {
+    Install(Package),
+    Uninstall(Package),
+    Update(Package),
 }
 
 impl BrewstyApp {
@@ -119,6 +128,7 @@ impl BrewstyApp {
             current_update_package: None,
             pending_updates: Vec::new(),
             pending_operation: None,
+            confirm_action: None,
             packages_in_operation: std::collections::HashSet::new(),
             services_in_operation: std::collections::HashSet::new(),
             task_manager: AsyncTaskManager::new(),
@@ -138,6 +148,31 @@ impl BrewstyApp {
 
     fn apply_theme(&self, ctx: &egui::Context) {
         crate::presentation::style::configure_style(ctx, self.config.theme);
+    }
+
+    /// Routes a destructive action through the confirmation dialog if enabled.
+    fn maybe_confirm_install(&mut self, package: Package) {
+        if self.config.confirm_before_actions {
+            self.confirm_action = Some(ConfirmAction::Install(package));
+        } else {
+            self.handle_install(package);
+        }
+    }
+
+    fn maybe_confirm_uninstall(&mut self, package: Package) {
+        if self.config.confirm_before_actions {
+            self.confirm_action = Some(ConfirmAction::Uninstall(package));
+        } else {
+            self.handle_uninstall(package);
+        }
+    }
+
+    fn maybe_confirm_update(&mut self, package: Package) {
+        if self.config.confirm_before_actions {
+            self.confirm_action = Some(ConfirmAction::Update(package));
+        } else {
+            self.handle_update(package);
+        }
     }
 
     fn load_installed_packages(&mut self, include_outdated: bool) {
@@ -1881,7 +1916,11 @@ impl eframe::App for BrewstyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_logs();
         self.poll_async_tasks();
-        ctx.request_repaint();
+
+        // Only continuously repaint when async tasks are active
+        if self.loading {
+            ctx.request_repaint();
+        }
 
         if !self.initialized {
             self.initialized = true;
@@ -2007,9 +2046,9 @@ impl eframe::App for BrewstyApp {
                     for action in actions {
                         match action {
                             InstalledAction::Refresh => self.load_installed_packages(true),
-                            InstalledAction::Install(pkg) => self.handle_install(pkg),
-                            InstalledAction::Uninstall(pkg) => self.handle_uninstall(pkg),
-                            InstalledAction::Update(pkg) => self.handle_update(pkg),
+                            InstalledAction::Install(pkg) => self.maybe_confirm_install(pkg),
+                            InstalledAction::Uninstall(pkg) => self.maybe_confirm_uninstall(pkg),
+                            InstalledAction::Update(pkg) => self.maybe_confirm_update(pkg),
                             InstalledAction::UpdateSelected(pkgs) => {
                                 self.handle_update_selected(pkgs)
                             }
@@ -2036,9 +2075,9 @@ impl eframe::App for BrewstyApp {
                     for action in actions {
                         match action {
                             SearchAction::Search => self.handle_search(),
-                            SearchAction::Install(pkg) => self.handle_install(pkg),
-                            SearchAction::Uninstall(pkg) => self.handle_uninstall(pkg),
-                            SearchAction::Update(pkg) => self.handle_update(pkg),
+                            SearchAction::Install(pkg) => self.maybe_confirm_install(pkg),
+                            SearchAction::Uninstall(pkg) => self.maybe_confirm_uninstall(pkg),
+                            SearchAction::Update(pkg) => self.maybe_confirm_update(pkg),
                             SearchAction::LoadInfo(name, pkg_type) => {
                                 self.load_package_info(name, pkg_type)
                             }
@@ -2124,6 +2163,46 @@ impl eframe::App for BrewstyApp {
             }
 
             self.info_modal.render(ctx);
+
+            // Confirmation dialog for destructive actions
+            if let Some(action) = self.confirm_action.clone() {
+                let (title, description) = match &action {
+                    ConfirmAction::Install(pkg) => (
+                        "Confirm Install".to_string(),
+                        format!("Install {} ({})?", pkg.name, pkg.package_type),
+                    ),
+                    ConfirmAction::Uninstall(pkg) => (
+                        "Confirm Uninstall".to_string(),
+                        format!("Uninstall {} ({})? This cannot be undone.", pkg.name, pkg.package_type),
+                    ),
+                    ConfirmAction::Update(pkg) => (
+                        "Confirm Update".to_string(),
+                        format!("Update {} ({})?", pkg.name, pkg.package_type),
+                    ),
+                };
+
+                egui::Window::new(title)
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .show(ctx, |ui| {
+                        ui.label(&description);
+                        ui.add_space(12.0);
+                        ui.horizontal(|ui| {
+                            if ui.button("Confirm").clicked() {
+                                match action {
+                                    ConfirmAction::Install(pkg) => self.handle_install(pkg),
+                                    ConfirmAction::Uninstall(pkg) => self.handle_uninstall(pkg),
+                                    ConfirmAction::Update(pkg) => self.handle_update(pkg),
+                                }
+                                self.confirm_action = None;
+                            }
+                            if ui.button("Cancel").clicked() {
+                                self.confirm_action = None;
+                            }
+                        });
+                    });
+            }
 
             self.password_modal.render(ctx);
             if let Some((confirmed, password)) = self.password_modal.take_result() {

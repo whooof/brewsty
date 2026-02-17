@@ -1,7 +1,5 @@
 use crate::domain::entities::PackageType;
 use anyhow::{anyhow, Result};
-use std::fs;
-use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 pub struct BrewOutput {
@@ -71,54 +69,25 @@ impl BrewCommand {
         Ok(BrewOutput { stdout, stderr })
     }
 
-    fn create_askpass_script(password: &str) -> Result<PathBuf> {
-        // Create a temporary askpass script that echoes the password
-        // This script will be called by sudo when it needs the password
-        let temp_dir = std::env::temp_dir();
-        let script_path = temp_dir.join("brewsty_askpass.sh");
-
-        let script_content = format!(
-            "#!/bin/bash\necho '{}'\n",
-            password.replace("'", "'\\''") // Escape single quotes for shell
-        );
-
-        fs::write(&script_path, script_content)?;
-
-        // Make the script executable
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = fs::Permissions::from_mode(0o700);
-            fs::set_permissions(&script_path, perms)?;
-        }
-
-        tracing::debug!("Created askpass script at: {:?}", script_path);
-        Ok(script_path)
-    }
-
     fn execute_brew_with_password(args: &[&str], password: &str) -> Result<BrewOutput> {
-        // Create an askpass script that returns the password
-        // When brew internally invokes sudo, sudo will call this script to get the password
-        // This way brew itself runs as the user (not root), which is correct
+        // Pass password via BREWSTY_SUDO_PASS env var and use an inline askpass
+        // that reads it. This avoids writing the password to disk.
 
-        tracing::debug!("Executing brew command with password via SUDO_ASKPASS script");
+        tracing::debug!("Executing brew command with password via inline SUDO_ASKPASS");
 
-        let askpass_path = Self::create_askpass_script(password)?;
-        let askpass_str = askpass_path.to_string_lossy().to_string();
-
+        // Use /usr/bin/printenv to echo the env var — no shell escaping needed
         let output = Command::new("brew")
             .args(args)
-            .env("SUDO_ASKPASS", &askpass_str)
+            .env("SUDO_ASKPASS", "/usr/bin/printenv")
             .env("SUDO_ASKPASS_REQUIRE", "force")
+            .env("SUDO_ASKPASS_VARS", "BREWSTY_SUDO_PASS")
+            .env("BREWSTY_SUDO_PASS", password)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()?;
 
         let stdout = String::from_utf8(output.stdout)?;
         let stderr = String::from_utf8(output.stderr)?;
-
-        // Clean up the askpass script
-        let _ = fs::remove_file(&askpass_path);
 
         if !output.status.success() {
             // Check if it's a password-related error
@@ -203,8 +172,11 @@ impl BrewCommand {
         Self::execute_brew_with_password(&["uninstall", type_arg, name], password)
     }
 
-    pub fn upgrade_package(name: &str) -> Result<BrewOutput> {
-        let output = Command::new("brew").args(["upgrade", name]).output()?;
+    pub fn upgrade_package(name: &str, package_type: PackageType) -> Result<BrewOutput> {
+        let type_arg = Self::get_package_type_arg(package_type);
+        let output = Command::new("brew")
+            .args(["upgrade", type_arg, name])
+            .output()?;
 
         let stdout = String::from_utf8(output.stdout)?;
         let stderr = String::from_utf8(output.stderr)?;
