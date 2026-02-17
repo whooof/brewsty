@@ -84,7 +84,7 @@ impl BrewPackageRepository {
 
                     if let Some(package) = Self::extract_package_item(
                         item,
-                        package_type.clone(),
+                        package_type,
                         version_key,
                         is_pinned,
                     ) {
@@ -125,7 +125,7 @@ impl BrewPackageRepository {
                 let version = parts[1].to_string();
                 let is_pinned = pinned_packages.contains(&name);
 
-                let package = Package::new(name, package_type.clone())
+                let package = Package::new(name, package_type)
                     .set_installed(true)
                     .with_version(version)
                     .set_pinned(is_pinned);
@@ -232,7 +232,7 @@ impl BrewPackageRepository {
 impl PackageRepository for BrewPackageRepository {
     async fn get_installed_packages(&self, package_type: PackageType) -> Result<Vec<Package>> {
         tracing::info!("get_installed_packages called for {:?}", package_type);
-        let package_type_clone = package_type.clone();
+        let package_type_clone = package_type;
         let output =
             tokio::task::spawn_blocking(move || BrewCommand::list_packages(package_type_clone))
                 .await??;
@@ -246,7 +246,7 @@ impl PackageRepository for BrewPackageRepository {
     }
 
     async fn get_outdated_packages(&self, package_type: PackageType) -> Result<Vec<Package>> {
-        let package_type_clone = package_type.clone();
+        let package_type_clone = package_type;
         let output =
             tokio::task::spawn_blocking(move || BrewCommand::outdated_packages(package_type_clone))
                 .await??;
@@ -255,7 +255,7 @@ impl PackageRepository for BrewPackageRepository {
 
     async fn install_package(&self, package: &Package) -> Result<()> {
         let name = package.name.clone();
-        let package_type = package.package_type.clone();
+        let package_type = package.package_type;
 
         let output =
             tokio::task::spawn_blocking(move || BrewCommand::install_package(&name, package_type))
@@ -268,7 +268,7 @@ impl PackageRepository for BrewPackageRepository {
 
     async fn uninstall_package(&self, package: &Package) -> Result<()> {
         let name = package.name.clone();
-        let package_type = package.package_type.clone();
+        let package_type = package.package_type;
 
         let output = tokio::task::spawn_blocking(move || {
             BrewCommand::uninstall_package(&name, package_type)
@@ -293,7 +293,7 @@ impl PackageRepository for BrewPackageRepository {
     }
 
     async fn update_all(&self) -> Result<()> {
-        let output = tokio::task::spawn_blocking(|| BrewCommand::upgrade_all()).await??;
+        let output = tokio::task::spawn_blocking(BrewCommand::upgrade_all).await??;
 
         Self::log_brew_output(&output).await;
 
@@ -301,18 +301,18 @@ impl PackageRepository for BrewPackageRepository {
     }
 
     async fn get_cleanup_preview(&self) -> Result<CleanupPreview> {
-        let output = tokio::task::spawn_blocking(|| BrewCommand::cleanup_dry_run()).await??;
+        let output = tokio::task::spawn_blocking(BrewCommand::cleanup_dry_run).await??;
         self.parse_cleanup_output(&output)
     }
 
     async fn get_cleanup_old_versions_preview(&self) -> Result<CleanupPreview> {
         let output =
-            tokio::task::spawn_blocking(|| BrewCommand::cleanup_old_versions_dry_run()).await??;
+            tokio::task::spawn_blocking(BrewCommand::cleanup_old_versions_dry_run).await??;
         self.parse_cleanup_output(&output)
     }
 
     async fn clean_cache(&self) -> Result<()> {
-        let output = tokio::task::spawn_blocking(|| BrewCommand::cleanup()).await??;
+        let output = tokio::task::spawn_blocking(BrewCommand::cleanup).await??;
 
         Self::log_brew_output(&output).await;
 
@@ -320,7 +320,7 @@ impl PackageRepository for BrewPackageRepository {
     }
 
     async fn cleanup_old_versions(&self) -> Result<()> {
-        let output = tokio::task::spawn_blocking(|| BrewCommand::cleanup_old_versions()).await??;
+        let output = tokio::task::spawn_blocking(BrewCommand::cleanup_old_versions).await??;
 
         Self::log_brew_output(&output).await;
 
@@ -333,7 +333,7 @@ impl PackageRepository for BrewPackageRepository {
         package_type: PackageType,
     ) -> Result<Vec<Package>> {
         let query = query.to_string();
-        let package_type_clone = package_type.clone();
+        let package_type_clone = package_type;
         let output = tokio::task::spawn_blocking(move || {
             BrewCommand::search_packages(&query, package_type_clone)
         })
@@ -342,7 +342,7 @@ impl PackageRepository for BrewPackageRepository {
         let packages: Vec<Package> = output
             .lines()
             .filter(|line| !line.is_empty())
-            .map(|line| Package::new(line.trim().to_string(), package_type.clone()))
+            .map(|line| Package::new(line.trim().to_string(), package_type))
             .collect();
 
         Ok(packages)
@@ -353,7 +353,7 @@ impl PackageRepository for BrewPackageRepository {
 
         let name = name.to_string();
         let name_clone = name.clone();
-        let package_type_clone = package_type.clone();
+        let package_type_clone = package_type;
 
         let output = tokio::time::timeout(
             std::time::Duration::from_secs(10),
@@ -439,5 +439,162 @@ impl PackageRepository for BrewPackageRepository {
         Self::log_brew_output(&output).await;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn repo() -> BrewPackageRepository {
+        BrewPackageRepository::new()
+    }
+
+    #[test]
+    fn parse_installed_packages_plain_text_formulae() {
+        let output = "wget 1.21.4\ncurl 8.4.0\ngit 2.43.0\n";
+        let pinned: Vec<String> = vec![];
+        let result = repo()
+            .parse_installed_packages_plain_text(output, PackageType::Formula, &pinned)
+            .unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].name, "wget");
+        assert_eq!(result[0].version.as_deref(), Some("1.21.4"));
+        assert_eq!(result[0].package_type, PackageType::Formula);
+        assert!(result[0].installed);
+        assert!(!result[0].pinned);
+    }
+
+    #[test]
+    fn parse_installed_packages_with_pinned() {
+        let output = "wget 1.21.4\ncurl 8.4.0\n";
+        let pinned = vec!["curl".to_string()];
+        let result = repo()
+            .parse_installed_packages_plain_text(output, PackageType::Formula, &pinned)
+            .unwrap();
+        assert!(!result[0].pinned);
+        assert!(result[1].pinned);
+        assert_eq!(result[1].name, "curl");
+    }
+
+    #[test]
+    fn parse_installed_packages_empty() {
+        let output = "";
+        let pinned: Vec<String> = vec![];
+        let result = repo()
+            .parse_installed_packages_plain_text(output, PackageType::Formula, &pinned)
+            .unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn parse_installed_packages_skips_malformed() {
+        let output = "wget 1.21.4\nmalformed_no_version\ncurl 8.4.0\n";
+        let pinned: Vec<String> = vec![];
+        let result = repo()
+            .parse_installed_packages_plain_text(output, PackageType::Formula, &pinned)
+            .unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn parse_outdated_json_formulae() {
+        let json = r#"{
+            "formulae": [
+                {
+                    "name": "wget",
+                    "installed_versions": ["1.21.3"],
+                    "current_version": "1.21.4"
+                }
+            ],
+            "casks": []
+        }"#;
+        let result = repo()
+            .parse_outdated_json(json, PackageType::Formula)
+            .unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, "wget");
+        assert_eq!(result[0].version.as_deref(), Some("1.21.3"));
+        assert_eq!(result[0].available_version.as_deref(), Some("1.21.4"));
+        assert!(result[0].outdated);
+        assert!(result[0].installed);
+    }
+
+    #[test]
+    fn parse_outdated_json_casks() {
+        let json = r#"{
+            "formulae": [],
+            "casks": [
+                {
+                    "name": "firefox",
+                    "installed_versions": ["120.0"],
+                    "current_version": "121.0"
+                }
+            ]
+        }"#;
+        let result = repo()
+            .parse_outdated_json(json, PackageType::Cask)
+            .unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, "firefox");
+        assert_eq!(result[0].package_type, PackageType::Cask);
+    }
+
+    #[test]
+    fn parse_outdated_json_empty() {
+        let json = r#"{"formulae": [], "casks": []}"#;
+        let result = repo()
+            .parse_outdated_json(json, PackageType::Formula)
+            .unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn parse_cleanup_output_with_items() {
+        // Lines starting with "Would remove:" are skipped by the parser,
+        // only bare paths are captured
+        let output = "==> This operation would free approximately 1.2GB of disk space.\n/usr/local/Cellar/pkg/1.0\n/usr/local/Cellar/pkg2/2.0\n";
+        let result = repo().parse_cleanup_output(output).unwrap();
+        assert_eq!(result.items.len(), 2);
+        assert_eq!(result.items[0].path, "/usr/local/Cellar/pkg/1.0");
+        assert_eq!(result.items[1].path, "/usr/local/Cellar/pkg2/2.0");
+    }
+
+    #[test]
+    fn parse_cleanup_output_empty() {
+        let output = "";
+        let result = repo().parse_cleanup_output(output).unwrap();
+        assert!(result.items.is_empty());
+        assert_eq!(result.total_size, 0);
+    }
+
+    #[test]
+    fn extract_package_item_formula() {
+        let json: Value = serde_json::from_str(
+            r#"{"name": "wget", "installed": [{"version": "1.21.4"}]}"#,
+        )
+        .unwrap();
+        let pkg =
+            BrewPackageRepository::extract_package_item(&json, PackageType::Formula, "installed", false)
+                .unwrap();
+        assert_eq!(pkg.name, "wget");
+        assert_eq!(pkg.version.as_deref(), Some("1.21.4"));
+        assert!(pkg.installed);
+        assert!(!pkg.pinned);
+    }
+
+    #[test]
+    fn extract_package_item_with_outdated() {
+        let json: Value = serde_json::from_str(
+            r#"{"name": "curl", "installed": [{"version": "8.3.0"}], "current_version": "8.4.0"}"#,
+        )
+        .unwrap();
+        let pkg =
+            BrewPackageRepository::extract_package_item(&json, PackageType::Formula, "installed", true)
+                .unwrap();
+        assert_eq!(pkg.name, "curl");
+        assert!(pkg.outdated);
+        assert!(pkg.pinned);
+        assert_eq!(pkg.available_version.as_deref(), Some("8.4.0"));
     }
 }

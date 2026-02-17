@@ -19,107 +19,66 @@ impl RepositoryUseCase {
     }
 }
 
-pub struct ListInstalledPackages {
-    use_case: RepositoryUseCase,
-}
-
-impl ListInstalledPackages {
-    pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-        Self {
-            use_case: RepositoryUseCase::new(repository),
+macro_rules! package_use_case {
+    // No-arg use case: fn execute(&self) -> Result<R>
+    ($name:ident, $method:ident -> $ret:ty) => {
+        pub struct $name { use_case: RepositoryUseCase }
+        impl $name {
+            pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
+                Self { use_case: RepositoryUseCase::new(repository) }
+            }
+            pub async fn execute(&self) -> Result<$ret> {
+                self.use_case.repository().$method().await
+            }
         }
-    }
-
-    pub async fn execute(&self, package_type: PackageType) -> Result<Vec<Package>> {
-        self.use_case
-            .repository()
-            .get_installed_packages(package_type)
-            .await
-    }
-}
-
-pub struct ListOutdatedPackages {
-    use_case: RepositoryUseCase,
-}
-
-impl ListOutdatedPackages {
-    pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-        Self {
-            use_case: RepositoryUseCase::new(repository),
+    };
+    // PackageType arg: fn execute(&self, pt: PackageType) -> Result<R>
+    // Must come before generic ($arg:ty) arm since PackageType matches $arg:ty
+    ($name:ident, $method:ident(PackageType) -> $ret:ty) => {
+        pub struct $name { use_case: RepositoryUseCase }
+        impl $name {
+            pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
+                Self { use_case: RepositoryUseCase::new(repository) }
+            }
+            pub async fn execute(&self, package_type: PackageType) -> Result<$ret> {
+                self.use_case.repository().$method(package_type).await
+            }
         }
-    }
-
-    pub async fn execute(&self, package_type: PackageType) -> Result<Vec<Package>> {
-        self.use_case
-            .repository()
-            .get_outdated_packages(package_type)
-            .await
-    }
-}
-
-pub struct InstallPackage {
-    use_case: RepositoryUseCase,
-}
-
-impl InstallPackage {
-    pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-        Self {
-            use_case: RepositoryUseCase::new(repository),
+    };
+    // Single owned-arg use case (passed as ref): fn execute(&self, arg: T) -> Result<R>
+    ($name:ident, $method:ident($arg:ty) -> $ret:ty) => {
+        pub struct $name { use_case: RepositoryUseCase }
+        impl $name {
+            pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
+                Self { use_case: RepositoryUseCase::new(repository) }
+            }
+            pub async fn execute(&self, arg: $arg) -> Result<$ret> {
+                self.use_case.repository().$method(&arg).await
+            }
         }
-    }
-
-    pub async fn execute(&self, package: Package) -> Result<()> {
-        self.use_case.repository().install_package(&package).await
-    }
-}
-
-pub struct UninstallPackage {
-    use_case: RepositoryUseCase,
-}
-
-impl UninstallPackage {
-    pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-        Self {
-            use_case: RepositoryUseCase::new(repository),
+    };
+    // Single ref-arg use case: fn execute(&self, arg: &T) -> Result<R>
+    ($name:ident, $method:ident(ref $arg:ty) -> $ret:ty) => {
+        pub struct $name { use_case: RepositoryUseCase }
+        impl $name {
+            pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
+                Self { use_case: RepositoryUseCase::new(repository) }
+            }
+            pub async fn execute(&self, arg: &$arg) -> Result<$ret> {
+                self.use_case.repository().$method(arg).await
+            }
         }
-    }
-
-    pub async fn execute(&self, package: Package) -> Result<()> {
-        self.use_case.repository().uninstall_package(&package).await
-    }
+    };
 }
 
-pub struct UpdatePackage {
-    use_case: RepositoryUseCase,
-}
-
-impl UpdatePackage {
-    pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-        Self {
-            use_case: RepositoryUseCase::new(repository),
-        }
-    }
-
-    pub async fn execute(&self, package: &Package) -> Result<()> {
-        self.use_case.repository().update_package(&package).await
-    }
-}
-
-pub struct UpdateAllPackages {
-    use_case: RepositoryUseCase,
-}
-
-impl UpdateAllPackages {
-    pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-        Self {
-            use_case: RepositoryUseCase::new(repository),
-        }
-    }
-
-    pub async fn execute(&self) -> Result<()> {
-        self.use_case.repository().update_all().await
-    }
-}
+package_use_case!(ListInstalledPackages, get_installed_packages(PackageType) -> Vec<Package>);
+package_use_case!(ListOutdatedPackages, get_outdated_packages(PackageType) -> Vec<Package>);
+package_use_case!(InstallPackage, install_package(Package) -> ());
+package_use_case!(UninstallPackage, uninstall_package(Package) -> ());
+package_use_case!(UpdatePackage, update_package(ref Package) -> ());
+package_use_case!(UpdateAllPackages, update_all -> ());
+package_use_case!(PinPackage, pin_package(Package) -> ());
+package_use_case!(UnpinPackage, unpin_package(Package) -> ());
 
 pub struct CleanCache {
     use_case: RepositoryUseCase,
@@ -127,9 +86,7 @@ pub struct CleanCache {
 
 impl CleanCache {
     pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-        Self {
-            use_case: RepositoryUseCase::new(repository),
-        }
+        Self { use_case: RepositoryUseCase::new(repository) }
     }
 
     pub async fn preview(&self) -> Result<CleanupPreview> {
@@ -147,16 +104,11 @@ pub struct CleanupOldVersions {
 
 impl CleanupOldVersions {
     pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-        Self {
-            use_case: RepositoryUseCase::new(repository),
-        }
+        Self { use_case: RepositoryUseCase::new(repository) }
     }
 
     pub async fn preview(&self) -> Result<CleanupPreview> {
-        self.use_case
-            .repository()
-            .get_cleanup_old_versions_preview()
-            .await
+        self.use_case.repository().get_cleanup_old_versions_preview().await
     }
 
     pub async fn execute(&self) -> Result<()> {
@@ -170,16 +122,11 @@ pub struct SearchPackages {
 
 impl SearchPackages {
     pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-        Self {
-            use_case: RepositoryUseCase::new(repository),
-        }
+        Self { use_case: RepositoryUseCase::new(repository) }
     }
 
     pub async fn execute(&self, query: &str, package_type: PackageType) -> Result<Vec<Package>> {
-        self.use_case
-            .repository()
-            .search_packages(query, package_type)
-            .await
+        self.use_case.repository().search_packages(query, package_type).await
     }
 }
 
@@ -189,47 +136,10 @@ pub struct GetPackageInfo {
 
 impl GetPackageInfo {
     pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-        Self {
-            use_case: RepositoryUseCase::new(repository),
-        }
+        Self { use_case: RepositoryUseCase::new(repository) }
     }
 
     pub async fn execute(&self, name: &str, package_type: PackageType) -> Result<Package> {
-        self.use_case
-            .repository()
-            .get_package_info(name, package_type)
-            .await
-    }
-}
-
-pub struct PinPackage {
-    use_case: RepositoryUseCase,
-}
-
-impl PinPackage {
-    pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-        Self {
-            use_case: RepositoryUseCase::new(repository),
-        }
-    }
-
-    pub async fn execute(&self, package: Package) -> Result<()> {
-        self.use_case.repository().pin_package(&package).await
-    }
-}
-
-pub struct UnpinPackage {
-    use_case: RepositoryUseCase,
-}
-
-impl UnpinPackage {
-    pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-        Self {
-            use_case: RepositoryUseCase::new(repository),
-        }
-    }
-
-    pub async fn execute(&self, package: Package) -> Result<()> {
-        self.use_case.repository().unpin_package(&package).await
+        self.use_case.repository().get_package_info(name, package_type).await
     }
 }

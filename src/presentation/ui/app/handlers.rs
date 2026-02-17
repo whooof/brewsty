@@ -1,181 +1,36 @@
-use crate::application::UseCaseContainer;
-use crate::domain::entities::{AppConfig, Package, PackageType};
-use crate::infrastructure::config_repository::ConfigRepository;
-use crate::presentation::components::{
-    CleanupAction, CleanupModal, CleanupType, FilterState, InfoModal, LogManager,
-    MergedPackageList, PackageList, PasswordModal, ServiceList, Tab, TabManager,
-};
-use crate::presentation::services::{AsyncExecutor, AsyncTask, AsyncTaskManager, TaskSharedState};
-use crate::presentation::ui::tabs::installed::{InstalledAction, InstalledTab};
-use crate::presentation::ui::tabs::log::{LogAction, LogTab};
-use crate::presentation::ui::tabs::search::{SearchAction, SearchTab};
-use crate::presentation::ui::tabs::services::{ServiceAction, ServicesTab};
-use crate::presentation::ui::tabs::settings::{SettingsAction, SettingsTab};
-use std::sync::mpsc::Receiver;
+use crate::domain::entities::{Package, PackageType};
+use crate::presentation::components::CleanupType;
+use crate::presentation::services::{AsyncTask, TaskSharedState};
 use std::sync::{Arc, Mutex};
 
-pub struct BrewstyApp {
-    tab_manager: TabManager,
-    filter_state: FilterState,
-
-    config: AppConfig,
-    config_repo: ConfigRepository,
-
-    cleanup_modal: CleanupModal,
-    info_modal: InfoModal,
-    password_modal: PasswordModal,
-    log_manager: LogManager,
-    log_rx: Receiver<String>,
-
-    merged_packages: MergedPackageList,
-    search_results: PackageList,
-    service_list: ServiceList,
-
-    auto_load_version_info: bool,
-
-    initialized: bool,
-
-    loading_installed: bool,
-    loading_outdated: bool,
-    loading_search: bool,
-    loading_services: bool,
-
-    loading_install: bool,
-    loading_uninstall: bool,
-    loading_update: bool,
-    loading_update_all: bool,
-    loading_clean_cache: bool,
-    loading_cleanup_old_versions: bool,
-    loading_export: bool,
-    loading_import: bool,
-
-    current_install_package: Option<String>,
-    current_uninstall_package: Option<String>,
-    current_update_package: Option<String>,
-    pending_updates: Vec<Package>,
-    pending_operation: Option<PendingOperation>,
-    confirm_action: Option<ConfirmAction>,
-    packages_in_operation: std::collections::HashSet<String>,
-    services_in_operation: std::collections::HashSet<String>,
-
-    task_manager: AsyncTaskManager,
-
-    use_cases: Arc<UseCaseContainer>,
-    executor: AsyncExecutor,
-
-    loading: bool,
-    status_message: String,
-    output_panel_height: f32,
-}
-
-#[derive(Clone, Debug)]
-enum PendingOperation {
-    Install(Package),
-    Uninstall(Package),
-}
-
-/// Action awaiting user confirmation via dialog
-#[derive(Clone, Debug)]
-enum ConfirmAction {
-    Install(Package),
-    Uninstall(Package),
-    Update(Package),
-}
+use super::{BrewstyApp, PendingOperation};
 
 impl BrewstyApp {
-    pub fn new(
-        use_cases: Arc<UseCaseContainer>,
-        log_rx: Receiver<String>,
-        executor: AsyncExecutor,
-    ) -> Self {
-        let config_repo = ConfigRepository::new();
-        let config = config_repo.load().unwrap_or_else(|e| {
-            tracing::error!("Failed to load config: {}", e);
-            AppConfig::default()
-        });
-
-        Self {
-            tab_manager: TabManager::new(),
-            filter_state: FilterState::new(),
-
-            config: config.clone(),
-            config_repo,
-
-            cleanup_modal: CleanupModal::new(),
-            info_modal: InfoModal::new(),
-            password_modal: PasswordModal::new(),
-            log_manager: LogManager::new(),
-            log_rx,
-            merged_packages: MergedPackageList::new(),
-            search_results: PackageList::new(),
-            service_list: ServiceList::new(),
-            auto_load_version_info: false,
-            initialized: false,
-            loading_installed: false,
-            loading_outdated: false,
-            loading_search: false,
-            loading_services: false,
-            loading_install: false,
-            loading_uninstall: false,
-            loading_update: false,
-            loading_update_all: false,
-            loading_clean_cache: false,
-            loading_cleanup_old_versions: false,
-            loading_export: false,
-            loading_import: false,
-            current_install_package: None,
-            current_uninstall_package: None,
-            current_update_package: None,
-            pending_updates: Vec::new(),
-            pending_operation: None,
-            confirm_action: None,
-            packages_in_operation: std::collections::HashSet::new(),
-            services_in_operation: std::collections::HashSet::new(),
-            task_manager: AsyncTaskManager::new(),
-            use_cases,
-            executor,
-            loading: false,
-            status_message: String::new(),
-            output_panel_height: 250.0,
-        }
-    }
-
-    fn save_config(&self) {
-        if let Err(e) = self.config_repo.save(&self.config) {
-            tracing::error!("Failed to save config: {}", e);
-        }
-    }
-
-    fn apply_theme(&self, ctx: &egui::Context) {
-        crate::presentation::style::configure_style(ctx, self.config.theme);
-    }
-
-    /// Routes a destructive action through the confirmation dialog if enabled.
-    fn maybe_confirm_install(&mut self, package: Package) {
+    pub(super) fn maybe_confirm_install(&mut self, package: Package) {
         if self.config.confirm_before_actions {
-            self.confirm_action = Some(ConfirmAction::Install(package));
+            self.confirm_action = Some(super::ConfirmAction::Install(package));
         } else {
             self.handle_install(package);
         }
     }
 
-    fn maybe_confirm_uninstall(&mut self, package: Package) {
+    pub(super) fn maybe_confirm_uninstall(&mut self, package: Package) {
         if self.config.confirm_before_actions {
-            self.confirm_action = Some(ConfirmAction::Uninstall(package));
+            self.confirm_action = Some(super::ConfirmAction::Uninstall(package));
         } else {
             self.handle_uninstall(package);
         }
     }
 
-    fn maybe_confirm_update(&mut self, package: Package) {
+    pub(super) fn maybe_confirm_update(&mut self, package: Package) {
         if self.config.confirm_before_actions {
-            self.confirm_action = Some(ConfirmAction::Update(package));
+            self.confirm_action = Some(super::ConfirmAction::Update(package));
         } else {
             self.handle_update(package);
         }
     }
 
-    fn load_installed_packages(&mut self, include_outdated: bool) {
+    pub(super) fn load_installed_packages(&mut self, include_outdated: bool) {
         if self.loading_installed || self.loading_outdated {
             return;
         }
@@ -400,7 +255,7 @@ impl BrewstyApp {
         });
     }
 
-    fn handle_update_selected(&mut self, package_names: Vec<String>) {
+    pub(super) fn handle_update_selected(&mut self, package_names: Vec<String>) {
         if self.loading_update_all {
             return;
         }
@@ -430,7 +285,7 @@ impl BrewstyApp {
         self.process_next_pending_update();
     }
 
-    fn process_next_pending_update(&mut self) {
+    pub(super) fn process_next_pending_update(&mut self) {
         if self.pending_updates.is_empty() {
             return;
         }
@@ -460,7 +315,7 @@ impl BrewstyApp {
         self.handle_update(package);
     }
 
-    fn is_password_error(&self, error_msg: &str) -> bool {
+    pub(super) fn is_password_error(&self, error_msg: &str) -> bool {
         error_msg.contains("authentication failure")
             || error_msg.contains("sudo")
             || error_msg.contains("password")
@@ -471,7 +326,7 @@ impl BrewstyApp {
             || error_msg.contains("sudo: a password is required")
     }
 
-    fn retry_with_password(&mut self, password: &str) {
+    pub(super) fn retry_with_password(&mut self, password: &str) {
         if let Some(operation) = self.pending_operation.take() {
             match operation {
                 PendingOperation::Install(package) => {
@@ -484,7 +339,7 @@ impl BrewstyApp {
         }
     }
 
-    fn handle_install(&mut self, package: Package) {
+    pub(super) fn handle_install(&mut self, package: Package) {
         if self.loading_install {
             return;
         }
@@ -567,7 +422,7 @@ impl BrewstyApp {
         });
     }
 
-    fn handle_uninstall(&mut self, package: Package) {
+    pub(super) fn handle_uninstall(&mut self, package: Package) {
         if self.loading_uninstall {
             return;
         }
@@ -653,7 +508,7 @@ impl BrewstyApp {
         });
     }
 
-    fn handle_update(&mut self, package: Package) {
+    pub(super) fn handle_update(&mut self, package: Package) {
         if self.loading_update {
             return;
         }
@@ -687,7 +542,7 @@ impl BrewstyApp {
         });
     }
 
-    fn handle_pin(&mut self, package: Package) {
+    pub(super) fn handle_pin(&mut self, package: Package) {
         self.loading = true;
         self.packages_in_operation.insert(package.name.clone());
         self.status_message = format!("Pinning {}...", package.name);
@@ -716,7 +571,7 @@ impl BrewstyApp {
         });
     }
 
-    fn handle_unpin(&mut self, package: Package) {
+    pub(super) fn handle_unpin(&mut self, package: Package) {
         self.loading = true;
         self.packages_in_operation.insert(package.name.clone());
         self.status_message = format!("Unpinning {}...", package.name);
@@ -745,7 +600,7 @@ impl BrewstyApp {
         });
     }
 
-    fn load_services(&mut self) {
+    pub(super) fn load_services(&mut self) {
         if self.loading_services {
             return;
         }
@@ -788,7 +643,7 @@ impl BrewstyApp {
         });
     }
 
-    fn handle_start_service(&mut self, service_name: String) {
+    pub(super) fn handle_start_service(&mut self, service_name: String) {
         self.services_in_operation.insert(service_name.clone());
         self.status_message = format!("Starting service {}...", service_name);
 
@@ -816,7 +671,7 @@ impl BrewstyApp {
         });
     }
 
-    fn handle_stop_service(&mut self, service_name: String) {
+    pub(super) fn handle_stop_service(&mut self, service_name: String) {
         self.services_in_operation.insert(service_name.clone());
         self.status_message = format!("Stopping service {}...", service_name);
 
@@ -844,7 +699,7 @@ impl BrewstyApp {
         });
     }
 
-    fn handle_restart_service(&mut self, service_name: String) {
+    pub(super) fn handle_restart_service(&mut self, service_name: String) {
         self.services_in_operation.insert(service_name.clone());
         self.status_message = format!("Restarting service {}...", service_name);
 
@@ -873,7 +728,7 @@ impl BrewstyApp {
         });
     }
 
-    fn handle_export_packages(&mut self) {
+    pub(super) fn handle_export_packages(&mut self) {
         if self.loading_export {
             return;
         }
@@ -918,7 +773,7 @@ impl BrewstyApp {
         }
     }
 
-    fn handle_import_packages(&mut self) {
+    pub(super) fn handle_import_packages(&mut self) {
         if self.loading_import {
             return;
         }
@@ -959,7 +814,7 @@ impl BrewstyApp {
         }
     }
 
-    fn handle_update_all(&mut self) {
+    pub(super) fn handle_update_all(&mut self) {
         if self.loading_update_all {
             return;
         }
@@ -988,43 +843,43 @@ impl BrewstyApp {
         });
     }
 
-    fn show_cleanup_preview(&mut self, cleanup_type: CleanupType) {
+    pub(super) fn show_cleanup_preview(&mut self, cleanup_type: CleanupType) {
         self.loading = true;
         self.status_message = "Loading cleanup preview...".to_string();
         self.log_manager.push("Loading cleanup preview".to_string());
 
-        let preview_result = match cleanup_type {
+        let preview = Arc::new(Mutex::new(None));
+        let error = Arc::new(Mutex::new(None));
+
+        self.task_manager.set_active_task(AsyncTask::CleanupPreview {
+            cleanup_type,
+            preview: Arc::clone(&preview),
+            error: Arc::clone(&error),
+        });
+
+        match cleanup_type {
             CleanupType::Cache => {
                 let use_case = Arc::clone(&self.use_cases.clean_cache);
-                self.executor.execute(async { use_case.preview().await })
+                self.executor.spawn(async move {
+                    match use_case.preview().await {
+                        Ok(p) => { if let Ok(mut prev) = preview.lock() { *prev = Some(p); } }
+                        Err(e) => { if let Ok(mut err) = error.lock() { *err = Some(format!("Error: {}", e)); } }
+                    }
+                });
             }
             CleanupType::OldVersions => {
                 let use_case = Arc::clone(&self.use_cases.cleanup_old_versions);
-                self.executor.execute(async { use_case.preview().await })
-            }
-        };
-
-        match preview_result {
-            Ok(preview) => {
-                let msg = format!(
-                    "Found {} items to clean ({})",
-                    preview.items.len(),
-                    format_size(preview.total_size)
-                );
-                self.log_manager.push(msg);
-                self.cleanup_modal.show_preview(cleanup_type, preview);
-            }
-            Err(e) => {
-                let msg = format!("Error getting cleanup preview: {}", e);
-                self.log_manager.push(msg.clone());
-                self.status_message = msg;
+                self.executor.spawn(async move {
+                    match use_case.preview().await {
+                        Ok(p) => { if let Ok(mut prev) = preview.lock() { *prev = Some(p); } }
+                        Err(e) => { if let Ok(mut err) = error.lock() { *err = Some(format!("Error: {}", e)); } }
+                    }
+                });
             }
         }
-
-        self.loading = false;
     }
 
-    fn handle_clean_cache(&mut self) {
+    pub(super) fn handle_clean_cache(&mut self) {
         if self.loading_clean_cache {
             return;
         }
@@ -1053,7 +908,7 @@ impl BrewstyApp {
         });
     }
 
-    fn handle_cleanup_old_versions(&mut self) {
+    pub(super) fn handle_cleanup_old_versions(&mut self) {
         if self.loading_cleanup_old_versions {
             return;
         }
@@ -1084,7 +939,126 @@ impl BrewstyApp {
         });
     }
 
-    fn handle_search(&mut self) {
+    pub(super) fn handle_doctor(&mut self) {
+        self.loading = true;
+        self.status_message = "Running brew doctor...".to_string();
+        self.log_manager.push("Running brew doctor".to_string());
+
+        let result = Arc::new(Mutex::new(None));
+        let error = Arc::new(Mutex::new(None));
+
+        self.task_manager.set_active_task(AsyncTask::Doctor {
+            result: Arc::clone(&result),
+            error: Arc::clone(&error),
+        });
+
+        self.executor.spawn(async move {
+            match tokio::task::spawn_blocking(|| {
+                crate::infrastructure::brew::command::BrewCommand::doctor()
+            }).await {
+                Ok(Ok(output)) => {
+                    if let Ok(mut r) = result.lock() {
+                        *r = Some(output);
+                    }
+                }
+                Ok(Err(e)) => {
+                    if let Ok(mut err) = error.lock() {
+                        *err = Some(format!("brew doctor failed: {}", e));
+                    }
+                }
+                Err(e) => {
+                    if let Ok(mut err) = error.lock() {
+                        *err = Some(format!("Task join error: {}", e));
+                    }
+                }
+            }
+        });
+    }
+
+    pub(super) fn load_taps(&mut self) {
+        self.loading = true;
+        self.status_message = "Loading taps...".to_string();
+
+        let taps = Arc::new(Mutex::new(Vec::new()));
+        let logs = Arc::new(Mutex::new(Vec::new()));
+
+        self.task_manager.set_active_task(AsyncTask::LoadTaps {
+            taps: Arc::clone(&taps),
+            logs: Arc::clone(&logs),
+        });
+
+        self.executor.spawn(async move {
+            match tokio::task::spawn_blocking(|| {
+                crate::infrastructure::brew::command::BrewCommand::list_taps()
+            }).await {
+                Ok(Ok(output)) => {
+                    let tap_list: Vec<String> = output.lines()
+                        .filter(|l| !l.is_empty())
+                        .map(|l| l.trim().to_string())
+                        .collect();
+                    let msg = format!("Loaded {} taps", tap_list.len());
+                    if let Ok(mut t) = taps.lock() { *t = tap_list; }
+                    if let Ok(mut l) = logs.lock() { l.push(msg); }
+                }
+                Ok(Err(e)) => {
+                    if let Ok(mut l) = logs.lock() { l.push(format!("Error loading taps: {}", e)); }
+                }
+                Err(e) => {
+                    if let Ok(mut l) = logs.lock() { l.push(format!("Task error: {}", e)); }
+                }
+            }
+        });
+    }
+
+    pub(super) fn handle_tap(&mut self, name: String) {
+        self.loading = true;
+        self.status_message = format!("Tapping {}...", name);
+        self.log_manager.push(format!("Tapping: {}", name));
+
+        let shared = TaskSharedState::new();
+        self.task_manager.set_active_task(AsyncTask::Tap {
+            success: Arc::clone(&shared.success),
+            logs: Arc::clone(&shared.logs),
+            message: Arc::clone(&shared.message),
+        });
+
+        let tap_name = name.clone();
+        self.executor.spawn(async move {
+            match tokio::task::spawn_blocking(move || {
+                crate::infrastructure::brew::command::BrewCommand::tap(&tap_name)
+            }).await {
+                Ok(Ok(_)) => shared.set_success(format!("Successfully tapped {}", name)),
+                Ok(Err(e)) => shared.set_failure(format!("Error tapping {}: {}", name, e)),
+                Err(e) => shared.set_failure(format!("Task error: {}", e)),
+            }
+        });
+    }
+
+    pub(super) fn handle_untap(&mut self, name: String) {
+        self.loading = true;
+        self.status_message = format!("Untapping {}...", name);
+        self.log_manager.push(format!("Untapping: {}", name));
+
+        let shared = TaskSharedState::new();
+        self.task_manager.set_active_task(AsyncTask::Untap {
+            success: Arc::clone(&shared.success),
+            logs: Arc::clone(&shared.logs),
+            message: Arc::clone(&shared.message),
+        });
+
+        let tap_name = name.clone();
+        self.executor.spawn(async move {
+            match tokio::task::spawn_blocking(move || {
+                crate::infrastructure::brew::command::BrewCommand::untap(&tap_name)
+            }).await {
+                Ok(Ok(_)) => shared.set_success(format!("Successfully untapped {}", name)),
+                Ok(Err(e)) => shared.set_failure(format!("Error untapping {}: {}", name, e)),
+                Err(e) => shared.set_failure(format!("Task error: {}", e)),
+            }
+        });
+    }
+
+    pub(super) fn handle_search(&mut self) {
         if self.filter_state.search_query().is_empty() {
             return;
         }
@@ -1158,7 +1132,7 @@ impl BrewstyApp {
         });
     }
 
-    fn load_package_info(&mut self, package_name: String, package_type: PackageType) {
+    pub(super) fn load_package_info(&mut self, package_name: String, package_type: PackageType) {
         if self.task_manager.can_load_more_package_info() {
             self.load_package_info_immediate(package_name, package_type);
         } else {
@@ -1167,7 +1141,7 @@ impl BrewstyApp {
         }
     }
 
-    fn load_package_info_immediate(&mut self, package_name: String, package_type: PackageType) {
+    pub(super) fn load_package_info_immediate(&mut self, package_name: String, package_type: PackageType) {
         if self.task_manager.is_loading_package_info(&package_name) {
             tracing::debug!("Already loading info for {}, skipping", package_name);
             return;
@@ -1182,12 +1156,12 @@ impl BrewstyApp {
         let use_case = Arc::clone(&self.use_cases.get_package_info);
         let result = Arc::new(Mutex::new(None));
         let name_clone = package_name.clone();
-        let package_type_clone = package_type.clone();
-        let package_type_clone2 = package_type.clone();
+        let package_type_clone = package_type;
+        let package_type_clone2 = package_type;
 
         let task = AsyncTask::LoadPackageInfo {
             package_name: package_name.clone(),
-            package_type: package_type.clone(),
+            package_type,
             result: Arc::clone(&result),
             started_at: std::time::Instant::now(),
         };
@@ -1218,583 +1192,6 @@ impl BrewstyApp {
                     if let Ok(mut result_guard) = result.lock() {
                         *result_guard = Some(failed_package);
                     }
-                }
-            }
-        });
-    }
-
-    fn poll_async_tasks(&mut self) {
-        tracing::trace!("poll_async_tasks called, checking for active task");
-        let result = self.task_manager.poll();
-
-        if let Some(packages) = result.installed_packages {
-            tracing::info!("Got {} installed packages from poll", packages.len());
-            self.merged_packages.update_packages(packages);
-            self.loading_installed = false;
-        }
-
-        if let Some(packages) = result.outdated_packages {
-            tracing::info!("Got {} outdated packages from poll", packages.len());
-            self.merged_packages.update_outdated_packages(packages);
-            self.loading_outdated = false;
-        }
-
-        if self.loading_installed == false && self.loading_outdated == false {
-            self.tab_manager.mark_loaded(Tab::Installed);
-            self.status_message = "Packages loaded".to_string();
-        }
-
-        if let Some(packages) = result.search_results {
-            self.search_results.update_packages(packages.clone());
-            self.loading_search = false;
-            self.status_message = "Search completed".to_string();
-
-            if self.auto_load_version_info {
-                tracing::info!("Auto-loading version info for {} packages", packages.len());
-                for package in packages.iter() {
-                    if package.version.is_none() && !package.version_load_failed {
-                        tracing::debug!("Auto-loading info for {}", package.name);
-                        self.load_package_info(package.name.clone(), package.package_type.clone());
-                    }
-                }
-            }
-        }
-
-        if let Some((_name, package)) = result.package_info {
-            self.search_results.update_package(package.clone());
-            self.merged_packages.update_package(package);
-        }
-
-        if let Some((success, message)) = result.install_completed {
-            self.loading_install = false;
-            self.loading = false;
-            let installed_pkg_name = self.current_install_package.clone();
-            if let Some(pkg) = &installed_pkg_name {
-                self.packages_in_operation.remove(pkg);
-            }
-            self.status_message = message.clone();
-
-            if success {
-                if let Some(pkg_name) = installed_pkg_name {
-                    if let Some(mut pkg) = self.search_results.get_package(&pkg_name) {
-                        pkg.installed = true;
-                        self.search_results.update_package(pkg);
-                    }
-
-                    self.merged_packages.mark_package_updated(&pkg_name);
-                    self.merged_packages
-                        .remove_from_outdated_selection_by_name(&pkg_name);
-                }
-                self.current_install_package = None;
-            } else {
-                if self.is_password_error(&message) {
-                    if let Some(pkg_name) = &installed_pkg_name {
-                        if let Some(pkg) = self.search_results.get_package(pkg_name) {
-                            self.pending_operation = Some(PendingOperation::Install(pkg));
-                            self.password_modal.show(format!("Install {}", pkg_name));
-                        }
-                    }
-                } else {
-                    self.current_install_package = None;
-                }
-            }
-        }
-
-        if let Some((success, message)) = result.uninstall_completed {
-            self.loading_uninstall = false;
-            self.loading = false;
-            let uninstall_pkg_name = self.current_uninstall_package.clone();
-            if let Some(pkg) = &uninstall_pkg_name {
-                self.packages_in_operation.remove(pkg);
-            }
-            self.status_message = message.clone();
-
-            if success {
-                if let Some(pkg) = self.current_uninstall_package.as_ref() {
-                    self.merged_packages.remove_installed_package(pkg);
-                }
-                self.current_uninstall_package = None;
-            } else {
-                if self.is_password_error(&message) {
-                    if let Some(pkg_name) = &uninstall_pkg_name {
-                        if let Some(pkg) = self.merged_packages.get_package(pkg_name) {
-                            self.pending_operation = Some(PendingOperation::Uninstall(pkg));
-                            self.password_modal.show(format!("Uninstall {}", pkg_name));
-                        }
-                    }
-                } else {
-                    self.current_uninstall_package = None;
-                }
-            }
-        }
-
-        if let Some((success, message)) = result.update_completed {
-            self.loading_update = false;
-            self.loading = false;
-            let pkg = self.current_update_package.take();
-            if let Some(ref pkg_name) = pkg {
-                self.packages_in_operation.remove(pkg_name);
-            }
-            self.status_message = message;
-
-            if success {
-                if let Some(pkg_name) = pkg {
-                    self.merged_packages.mark_package_updated(&pkg_name);
-                    self.merged_packages
-                        .remove_from_outdated_selection_by_name(&pkg_name);
-                }
-            }
-
-            if self.loading_update_all && !self.pending_updates.is_empty() {
-                self.process_next_pending_update();
-                self.loading_update = true;
-            } else if self.loading_update_all && self.pending_updates.is_empty() {
-                self.loading_update_all = false;
-                self.status_message = "Finished updating all packages".to_string();
-                self.log_manager
-                    .push("Finished updating all packages".to_string());
-                tracing::info!("Finished updating all packages");
-                self.merged_packages.clear_outdated_selection();
-            }
-        }
-
-        if let Some((success, message)) = result.update_all_completed {
-            self.loading_update_all = false;
-            self.loading = false;
-            self.status_message = message;
-
-            if success {
-                for pkg_name in self.packages_in_operation.iter() {
-                    self.merged_packages.mark_package_updated(pkg_name);
-                    self.merged_packages
-                        .remove_from_outdated_selection_by_name(pkg_name);
-                }
-                self.packages_in_operation.clear();
-            }
-
-            self.merged_packages.clear_outdated_selection();
-        }
-
-        if let Some((_success, message)) = result.clean_cache_completed {
-            self.loading_clean_cache = false;
-            self.loading = false;
-            self.status_message = message;
-            self.cleanup_modal.close();
-        }
-
-        if let Some((_success, message)) = result.cleanup_old_versions_completed {
-            self.loading_cleanup_old_versions = false;
-            self.loading = false;
-            self.status_message = message;
-            self.cleanup_modal.close();
-        }
-
-        if let Some((package_name, _success, message)) = result.pin_completed {
-            self.packages_in_operation.remove(&package_name);
-            self.status_message = message;
-            self.load_installed_packages(true);
-        }
-
-        if let Some((package_name, _success, message)) = result.unpin_completed {
-            self.packages_in_operation.remove(&package_name);
-            self.status_message = message;
-            self.load_installed_packages(true);
-        }
-
-        if let Some(services) = result.services {
-            tracing::info!("Got {} services from poll", services.len());
-            self.service_list.update_services(services);
-            self.loading_services = false;
-            self.tab_manager.mark_loaded(Tab::Services);
-            self.status_message = "Services loaded".to_string();
-        }
-
-        if let Some((service_name, success, message)) = result.start_service_completed {
-            self.services_in_operation.remove(&service_name);
-            self.status_message = message;
-            if success {
-                self.load_services();
-            }
-        }
-
-        if let Some((service_name, success, message)) = result.stop_service_completed {
-            self.services_in_operation.remove(&service_name);
-            self.status_message = message;
-            if success {
-                self.load_services();
-            }
-        }
-
-        if let Some((service_name, success, message)) = result.restart_service_completed {
-            self.services_in_operation.remove(&service_name);
-            self.status_message = message;
-            if success {
-                self.load_services();
-            }
-        }
-
-        if let Some((_success, message)) = result.export_packages_completed {
-            self.loading_export = false;
-            self.loading = false;
-            self.status_message = message;
-        }
-
-        if let Some((success, message)) = result.import_packages_completed {
-            self.loading_import = false;
-            self.loading = false;
-            self.status_message = message;
-            if success {
-                // Reload installed packages after successful import
-                self.load_installed_packages(true);
-            }
-        }
-
-        self.log_manager.extend(result.logs);
-
-        if self.task_manager.can_load_more_package_info()
-            && self.task_manager.pending_loads_count() > 0
-        {
-            let to_load = 15 - self.task_manager.pending_loads_count();
-            let batch = self.task_manager.drain_pending_loads(to_load);
-
-            if !batch.is_empty() {
-                tracing::info!(
-                    "Starting batch load of {} packages ({} remaining in queue)",
-                    batch.len(),
-                    self.task_manager.pending_loads_count()
-                );
-
-                for (name, pkg_type) in batch {
-                    self.load_package_info_immediate(name, pkg_type);
-                }
-            }
-        }
-    }
-
-    fn poll_logs(&mut self) {
-        while let Ok(log_entry) = self.log_rx.try_recv() {
-            self.log_manager.push(log_entry);
-        }
-    }
-}
-
-fn format_size(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-
-    if bytes >= GB {
-        format!("{:.2} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.2} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.2} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes)
-    }
-}
-
-impl eframe::App for BrewstyApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.poll_logs();
-        self.poll_async_tasks();
-
-        // Only continuously repaint when async tasks are active
-        if self.loading {
-            ctx.request_repaint();
-        }
-
-        if !self.initialized {
-            self.initialized = true;
-            // Only load installed packages if auto-update is enabled
-            self.load_installed_packages(self.config.auto_update_check);
-
-            // Apply initial theme
-            self.apply_theme(ctx);
-        }
-
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                ui.heading("🍺 Brewsty");
-                ui.label(format!("v{}", env!("CARGO_PKG_VERSION")));
-                ui.separator();
-
-                if ui
-                    .selectable_label(
-                        self.tab_manager.is_current(Tab::Installed),
-                        "Installed & Outdated",
-                    )
-                    .clicked()
-                {
-                    self.tab_manager.switch_to(Tab::Installed);
-                    if !self.tab_manager.is_loaded(Tab::Installed) {
-                        self.load_installed_packages(true);
-                    }
-                }
-                if ui
-                    .selectable_label(
-                        self.tab_manager.is_current(Tab::SearchInstall),
-                        "Search & Install",
-                    )
-                    .clicked()
-                {
-                    self.tab_manager.switch_to(Tab::SearchInstall);
-                }
-                if ui
-                    .selectable_label(self.tab_manager.is_current(Tab::Services), "Services")
-                    .clicked()
-                {
-                    self.tab_manager.switch_to(Tab::Services);
-                    if !self.tab_manager.is_loaded(Tab::Services) {
-                        self.load_services();
-                    }
-                }
-                if ui
-                    .selectable_label(self.tab_manager.is_current(Tab::Settings), "Settings")
-                    .clicked()
-                {
-                    self.tab_manager.switch_to(Tab::Settings);
-                }
-                if ui
-                    .selectable_label(self.tab_manager.is_current(Tab::Log), "Log")
-                    .clicked()
-                {
-                    self.tab_manager.switch_to(Tab::Log);
-                }
-            });
-            ui.add_space(8.0);
-        });
-
-        egui::TopBottomPanel::bottom("bottom_panel")
-            .resizable(true)
-            .default_height(self.output_panel_height)
-            .show(ctx, |ui| {
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    if ui.button("Clear Output").clicked() {
-                        self.log_manager = LogManager::new();
-                    }
-                    ui.separator();
-                    if ui.button("📋 Copy Output").clicked() {
-                        let output = self
-                            .log_manager
-                            .all_logs()
-                            .map(|entry| {
-                                format!("[{}] {}", entry.format_timestamp(), entry.message)
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        ctx.copy_text(output);
-                    }
-                });
-
-                ui.separator();
-
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false; 2])
-                    .stick_to_bottom(true)
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-
-                        for entry in self.log_manager.filtered_logs() {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new(format!("[{}]", entry.format_timestamp()))
-                                        .color(egui::Color32::GRAY)
-                                        .monospace(),
-                                );
-                                ui.monospace(&entry.message);
-                            });
-                        }
-                    });
-
-                self.output_panel_height = ui.min_rect().height();
-            });
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            match self.tab_manager.current() {
-                Tab::Installed => {
-                    let actions = InstalledTab::show(
-                        ui,
-                        &mut self.merged_packages,
-                        &mut self.filter_state,
-                        &self.packages_in_operation,
-                        self.loading_installed,
-                        self.loading_outdated,
-                        &mut self.info_modal,
-                    );
-
-                    for action in actions {
-                        match action {
-                            InstalledAction::Refresh => self.load_installed_packages(true),
-                            InstalledAction::Install(pkg) => self.maybe_confirm_install(pkg),
-                            InstalledAction::Uninstall(pkg) => self.maybe_confirm_uninstall(pkg),
-                            InstalledAction::Update(pkg) => self.maybe_confirm_update(pkg),
-                            InstalledAction::UpdateSelected(pkgs) => {
-                                self.handle_update_selected(pkgs)
-                            }
-                            InstalledAction::Pin(pkg) => self.handle_pin(pkg),
-                            InstalledAction::Unpin(pkg) => self.handle_unpin(pkg),
-                            InstalledAction::LoadInfo(name, pkg_type) => {
-                                self.load_package_info(name, pkg_type)
-                            }
-                        }
-                    }
-                }
-
-                Tab::SearchInstall => {
-                    let actions = SearchTab::show(
-                        ui,
-                        &mut self.search_results,
-                        &mut self.filter_state,
-                        &self.packages_in_operation,
-                        self.loading_search,
-                        &mut self.auto_load_version_info,
-                        &mut self.info_modal,
-                    );
-
-                    for action in actions {
-                        match action {
-                            SearchAction::Search => self.handle_search(),
-                            SearchAction::Install(pkg) => self.maybe_confirm_install(pkg),
-                            SearchAction::Uninstall(pkg) => self.maybe_confirm_uninstall(pkg),
-                            SearchAction::Update(pkg) => self.maybe_confirm_update(pkg),
-                            SearchAction::LoadInfo(name, pkg_type) => {
-                                self.load_package_info(name, pkg_type)
-                            }
-                            SearchAction::Pin(pkg) => self.handle_pin(pkg),
-                            SearchAction::Unpin(pkg) => self.handle_unpin(pkg),
-                        }
-                    }
-                }
-
-                Tab::Services => {
-                    let actions = ServicesTab::show(
-                        ui,
-                        &mut self.service_list,
-                        &self.services_in_operation,
-                        self.loading_services,
-                    );
-
-                    for action in actions {
-                        match action {
-                            ServiceAction::Refresh => self.load_services(),
-                            ServiceAction::Start(name) => self.handle_start_service(name),
-                            ServiceAction::Stop(name) => self.handle_stop_service(name),
-                            ServiceAction::Restart(name) => self.handle_restart_service(name),
-                        }
-                    }
-                }
-
-                Tab::Settings => {
-                    tracing::trace!("Rendering Settings Tab");
-                    let actions = SettingsTab::show(
-                        ui,
-                        &mut self.config,
-                        &mut self.log_manager,
-                        self.loading_export,
-                        self.loading_import,
-                    );
-
-                    for action in actions {
-                        match action {
-                            SettingsAction::SaveConfig => self.save_config(),
-                            SettingsAction::ApplyTheme => self.apply_theme(ctx),
-                            SettingsAction::ShowCleanupPreview(cleanup_type) => {
-                                self.show_cleanup_preview(cleanup_type)
-                            }
-                            SettingsAction::UpdateAll => self.handle_update_all(),
-                            SettingsAction::ExportPackages => self.handle_export_packages(),
-                            SettingsAction::ImportPackages => self.handle_import_packages(),
-                        }
-                    }
-                }
-
-                Tab::Log => {
-                    let actions = LogTab::show(ui, &self.log_manager);
-                    for action in actions {
-                        match action {
-                            LogAction::CopyAll => {
-                                let output = self
-                                    .log_manager
-                                    .all_logs()
-                                    .map(|entry| {
-                                        format!("[{}] {}", entry.format_timestamp(), entry.message)
-                                    })
-                                    .collect::<Vec<_>>()
-                                    .join("\n");
-                                ctx.copy_text(output);
-                            }
-                            LogAction::Clear => self.log_manager = LogManager::new(),
-                        }
-                    }
-                }
-            }
-
-            if let Some(action) = self.cleanup_modal.render(ctx) {
-                match action {
-                    CleanupAction::Confirm(cleanup_type) => match cleanup_type {
-                        CleanupType::Cache => self.handle_clean_cache(),
-                        CleanupType::OldVersions => self.handle_cleanup_old_versions(),
-                    },
-                    CleanupAction::Cancel => {
-                        self.cleanup_modal.close();
-                    }
-                }
-            }
-
-            self.info_modal.render(ctx);
-
-            // Confirmation dialog for destructive actions
-            if let Some(action) = self.confirm_action.clone() {
-                let (title, description) = match &action {
-                    ConfirmAction::Install(pkg) => (
-                        "Confirm Install".to_string(),
-                        format!("Install {} ({})?", pkg.name, pkg.package_type),
-                    ),
-                    ConfirmAction::Uninstall(pkg) => (
-                        "Confirm Uninstall".to_string(),
-                        format!("Uninstall {} ({})? This cannot be undone.", pkg.name, pkg.package_type),
-                    ),
-                    ConfirmAction::Update(pkg) => (
-                        "Confirm Update".to_string(),
-                        format!("Update {} ({})?", pkg.name, pkg.package_type),
-                    ),
-                };
-
-                egui::Window::new(title)
-                    .collapsible(false)
-                    .resizable(false)
-                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                    .show(ctx, |ui| {
-                        ui.label(&description);
-                        ui.add_space(12.0);
-                        ui.horizontal(|ui| {
-                            if ui.button("Confirm").clicked() {
-                                match action {
-                                    ConfirmAction::Install(pkg) => self.handle_install(pkg),
-                                    ConfirmAction::Uninstall(pkg) => self.handle_uninstall(pkg),
-                                    ConfirmAction::Update(pkg) => self.handle_update(pkg),
-                                }
-                                self.confirm_action = None;
-                            }
-                            if ui.button("Cancel").clicked() {
-                                self.confirm_action = None;
-                            }
-                        });
-                    });
-            }
-
-            self.password_modal.render(ctx);
-            if let Some((confirmed, password)) = self.password_modal.take_result() {
-                if confirmed && !password.is_empty() {
-                    self.retry_with_password(&password);
-                } else {
-                    self.pending_operation = None;
-                    self.log_manager
-                        .push("Password entry cancelled.".to_string());
-                    tracing::info!("Password entry cancelled");
                 }
             }
         });

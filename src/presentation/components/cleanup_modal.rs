@@ -1,6 +1,6 @@
 use crate::domain::entities::CleanupPreview;
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum CleanupType {
     Cache,
     OldVersions,
@@ -75,11 +75,10 @@ impl CleanupModal {
                     ui.separator();
 
                     ui.horizontal(|ui| {
-                        if ui.button("Confirm").clicked() {
-                            if let Some(cleanup_type) = &self.cleanup_type {
-                                action = Some(CleanupAction::Confirm(cleanup_type.clone()));
+                        if ui.button("Confirm").clicked()
+                            && let Some(cleanup_type) = &self.cleanup_type {
+                                action = Some(CleanupAction::Confirm(*cleanup_type));
                             }
-                        }
 
                         if ui.button("Cancel").clicked() {
                             action = Some(CleanupAction::Cancel);

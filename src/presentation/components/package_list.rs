@@ -83,8 +83,7 @@ impl PackageList {
 
                             let is_selected = self
                                 .selected_package
-                                .as_ref()
-                                .map_or(false, |s| s == &package.name);
+                                .as_ref() == Some(&package.name);
 
                             if ui.selectable_label(is_selected, &package.name).clicked() {
                                 self.selected_package = Some(package.name.clone());
@@ -157,16 +156,12 @@ impl PackageList {
                                             if ui.button("Unpin").clicked() {
                                                 *on_unpin = Some(package.clone());
                                             }
-                                        } else {
-                                            if ui.button("Pin").clicked() {
-                                                *on_pin = Some(package.clone());
-                                            }
+                                        } else if ui.button("Pin").clicked() {
+                                            *on_pin = Some(package.clone());
                                         }
                                     }
-                                } else {
-                                    if ui.button("Install").clicked() {
-                                        *on_install = Some(package.clone());
-                                    }
+                                } else if ui.button("Install").clicked() {
+                                    *on_install = Some(package.clone());
                                 }
 
                                 if package.version.is_none()
@@ -176,11 +171,10 @@ impl PackageList {
                                     if ui.button("Load Info").clicked() {
                                         *on_load_info = Some(package.clone());
                                     }
-                                } else if package.description.is_some() {
-                                    if ui.button("Info").clicked() {
+                                } else if package.description.is_some()
+                                    && ui.button("Info").clicked() {
                                         self.show_info_action = Some(package.clone());
                                     }
-                                }
                             });
 
                             ui.end_row();

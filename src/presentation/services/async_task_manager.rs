@@ -1,4 +1,4 @@
-use crate::domain::entities::{Package, PackageType, Service};
+use crate::domain::entities::{CleanupPreview, Package, PackageType, Service};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
@@ -102,6 +102,29 @@ pub enum AsyncTask {
         logs: Arc<Mutex<Vec<String>>>,
         message: Arc<Mutex<String>>,
     },
+    CleanupPreview {
+        cleanup_type: crate::presentation::components::CleanupType,
+        preview: Arc<Mutex<Option<CleanupPreview>>>,
+        error: Arc<Mutex<Option<String>>>,
+    },
+    Doctor {
+        result: Arc<Mutex<Option<String>>>,
+        error: Arc<Mutex<Option<String>>>,
+    },
+    LoadTaps {
+        taps: Arc<Mutex<Vec<String>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+    },
+    Tap {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    Untap {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
 }
 
 /// Shared state for async tasks that produce a success/failure result.
@@ -168,6 +191,11 @@ pub struct TaskResult {
     pub restart_service_completed: Option<(String, bool, String)>,
     pub export_packages_completed: Option<(bool, String)>,
     pub import_packages_completed: Option<(bool, String)>,
+    pub cleanup_preview_result: Option<(crate::presentation::components::CleanupType, Result<CleanupPreview, String>)>,
+    pub doctor_result: Option<Result<String, String>>,
+    pub taps: Option<Vec<String>>,
+    pub tap_completed: Option<(bool, String)>,
+    pub untap_completed: Option<(bool, String)>,
 }
 
 /// Try to poll a completed success/logs/message task. Returns Some((succeeded, message, logs)) if done.
@@ -214,12 +242,11 @@ impl AsyncTaskManager {
     }
 
     pub fn set_active_task(&mut self, task: AsyncTask) {
-        if let Some(kind) = task.kind() {
-            if self.has_task_kind(kind) {
+        if let Some(kind) = task.kind()
+            && self.has_task_kind(kind) {
                 tracing::warn!("{:?} task is already running, ignoring duplicate", kind);
                 return;
             }
-        }
 
         self.active_tasks.push(task);
     }
@@ -292,66 +319,68 @@ impl AsyncTaskManager {
             restart_service_completed: None,
             export_packages_completed: None,
             import_packages_completed: None,
+            cleanup_preview_result: None,
+            doctor_result: None,
+            taps: None,
+            tap_completed: None,
+            untap_completed: None,
         };
 
         let mut tasks_to_keep = Vec::new();
 
         for (pkg_name, task) in self.package_info_tasks.drain(..) {
-            match task {
-                AsyncTask::LoadPackageInfo {
+            if let AsyncTask::LoadPackageInfo {
                     package_name,
                     package_type,
                     result: pkg_result,
                     started_at,
-                } => {
-                    let elapsed = started_at.elapsed();
+                } = task {
+                let elapsed = started_at.elapsed();
 
-                    if elapsed > std::time::Duration::from_secs(10) {
-                        tracing::warn!(
-                            "Package info loading timed out for {} after {:?}",
-                            package_name,
-                            elapsed
-                        );
-                        let failed_package = Package::new(package_name.clone(), package_type)
-                            .set_version_load_failed(true);
-                        result.package_info = Some((package_name.clone(), failed_package));
-                        self.packages_loading_info.remove(&package_name);
-                        result.completed_package_info_loads.push(package_name);
-                        continue;
-                    }
-
-                    let package_name_clone = package_name.clone();
-                    let should_keep = match pkg_result.try_lock() {
-                        Ok(pkg_opt) => {
-                            if let Some(package) = pkg_opt.clone() {
-                                tracing::info!(
-                                    "Updating search results with package info for {}",
-                                    package_name_clone
-                                );
-                                result.package_info = Some((package_name_clone.clone(), package));
-                                self.packages_loading_info.remove(&package_name_clone);
-                                result.completed_package_info_loads.push(package_name_clone);
-                                false
-                            } else {
-                                true
-                            }
-                        }
-                        Err(_) => true,
-                    };
-
-                    if should_keep {
-                        tasks_to_keep.push((
-                            pkg_name,
-                            AsyncTask::LoadPackageInfo {
-                                package_name,
-                                package_type,
-                                result: pkg_result,
-                                started_at,
-                            },
-                        ));
-                    }
+                if elapsed > std::time::Duration::from_secs(10) {
+                    tracing::warn!(
+                        "Package info loading timed out for {} after {:?}",
+                        package_name,
+                        elapsed
+                    );
+                    let failed_package = Package::new(package_name.clone(), package_type)
+                        .set_version_load_failed(true);
+                    result.package_info = Some((package_name.clone(), failed_package));
+                    self.packages_loading_info.remove(&package_name);
+                    result.completed_package_info_loads.push(package_name);
+                    continue;
                 }
-                _ => {}
+
+                let package_name_clone = package_name.clone();
+                let should_keep = match pkg_result.try_lock() {
+                    Ok(pkg_opt) => {
+                        if let Some(package) = pkg_opt.clone() {
+                            tracing::info!(
+                                "Updating search results with package info for {}",
+                                package_name_clone
+                            );
+                            result.package_info = Some((package_name_clone.clone(), package));
+                            self.packages_loading_info.remove(&package_name_clone);
+                            result.completed_package_info_loads.push(package_name_clone);
+                            false
+                        } else {
+                            true
+                        }
+                    }
+                    Err(_) => true,
+                };
+
+                if should_keep {
+                    tasks_to_keep.push((
+                        pkg_name,
+                        AsyncTask::LoadPackageInfo {
+                            package_name,
+                            package_type,
+                            result: pkg_result,
+                            started_at,
+                        },
+                    ));
+                }
             }
         }
 
@@ -496,6 +525,74 @@ impl AsyncTaskManager {
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::ImportPackages { success, logs, message });
+                    }
+                }
+                AsyncTask::CleanupPreview { cleanup_type, preview, error } => {
+                    let done = if let Ok(err) = error.try_lock() {
+                        if let Some(err_msg) = err.as_ref() {
+                            result.cleanup_preview_result = Some((cleanup_type, Err(err_msg.clone())));
+                            true
+                        } else if let Ok(prev) = preview.try_lock() {
+                            if let Some(p) = prev.as_ref() {
+                                result.cleanup_preview_result = Some((cleanup_type, Ok(p.clone())));
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+                    if !done {
+                        active_tasks_to_keep.push(AsyncTask::CleanupPreview { cleanup_type, preview, error });
+                    }
+                }
+                AsyncTask::Doctor { result: doc_result, error } => {
+                    let done = if let Ok(err) = error.try_lock() {
+                        if let Some(err_msg) = err.as_ref() {
+                            result.doctor_result = Some(Err(err_msg.clone()));
+                            true
+                        } else if let Ok(res) = doc_result.try_lock() {
+                            if let Some(r) = res.as_ref() {
+                                result.doctor_result = Some(Ok(r.clone()));
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+                    if !done {
+                        active_tasks_to_keep.push(AsyncTask::Doctor { result: doc_result, error });
+                    }
+                }
+                AsyncTask::LoadTaps { taps, logs } => {
+                    if let Some((data, log)) = poll_data_task(&taps, &logs) {
+                        result.taps = Some(data);
+                        result.logs.extend(log);
+                    } else {
+                        active_tasks_to_keep.push(AsyncTask::LoadTaps { taps, logs });
+                    }
+                }
+                AsyncTask::Tap { success, logs, message } => {
+                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
+                        result.tap_completed = Some((ok, msg));
+                        result.logs.extend(log);
+                    } else {
+                        active_tasks_to_keep.push(AsyncTask::Tap { success, logs, message });
+                    }
+                }
+                AsyncTask::Untap { success, logs, message } => {
+                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
+                        result.untap_completed = Some((ok, msg));
+                        result.logs.extend(log);
+                    } else {
+                        active_tasks_to_keep.push(AsyncTask::Untap { success, logs, message });
                     }
                 }
                 AsyncTask::LoadPackageInfo { .. } => {}

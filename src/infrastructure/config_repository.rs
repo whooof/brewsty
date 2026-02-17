@@ -9,11 +9,9 @@ pub struct ConfigRepository {
 
 impl ConfigRepository {
     pub fn new() -> Self {
-        let config_dir = if let Ok(home) = std::env::var("HOME") {
-            PathBuf::from(home).join(".config").join("brewsty")
-        } else {
-            PathBuf::from(".")
-        };
+        let config_dir = dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("brewsty");
 
         Self {
             config_path: config_dir.join("config.json"),

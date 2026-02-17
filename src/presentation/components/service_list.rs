@@ -19,6 +19,10 @@ impl ServiceList {
         self.services = services;
     }
 
+    pub fn service_count(&self) -> usize {
+        self.services.len()
+    }
+
     pub fn update_service(&mut self, service: Service) {
         if let Some(existing) = self.services.iter_mut().find(|s| s.name == service.name) {
             *existing = service;
@@ -51,8 +55,7 @@ impl ServiceList {
                         for service in &self.services {
                             let is_selected = self
                                 .selected_service
-                                .as_ref()
-                                .map_or(false, |s| s == &service.name);
+                                .as_ref() == Some(&service.name);
 
                             if ui.selectable_label(is_selected, &service.name).clicked() {
                                 self.selected_service = Some(service.name.clone());

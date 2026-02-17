@@ -53,7 +53,7 @@ impl BrewPackageListRepository {
                     None
                 };
                 
-                let mut item = PackageListItem::new(name, package_type.clone());
+                let mut item = PackageListItem::new(name, *package_type);
                 if let Some(ver) = version {
                     item = item.with_version(ver);
                 }
@@ -72,7 +72,7 @@ impl BrewPackageListRepository {
 #[async_trait]
 impl PackageListRepository for BrewPackageListRepository {
     async fn export_package_list(&self) -> Result<PackageList> {
-        let output = tokio::task::spawn_blocking(|| BrewCommand::export_installed()).await??;
+        let output = tokio::task::spawn_blocking(BrewCommand::export_installed).await??;
         self.parse_package_list(&output)
     }
 
@@ -80,44 +80,80 @@ impl PackageListRepository for BrewPackageListRepository {
         let mut installed = Vec::new();
         let mut failed = Vec::new();
 
-        // Install formulae
-        for item in &package_list.formulae {
-            let name = item.name.clone();
-            let package_type = item.package_type.clone();
+        // Batch install formulae
+        if !package_list.formulae.is_empty() {
+            let names: Vec<String> = package_list.formulae.iter().map(|i| i.name.clone()).collect();
+            tracing::info!("Batch installing {} formulae", names.len());
 
+            let names_clone = names.clone();
             match tokio::task::spawn_blocking(move || {
-                BrewCommand::install_package(&name, package_type)
-            })
-            .await?
-            {
+                let args: Vec<&str> = std::iter::once("install")
+                    .chain(std::iter::once("--formula"))
+                    .chain(names_clone.iter().map(|s| s.as_str()))
+                    .collect();
+                BrewCommand::execute_brew(&args)
+            }).await? {
                 Ok(_) => {
-                    installed.push(item.name.clone());
-                    tracing::info!("Successfully installed formula: {}", item.name);
+                    tracing::info!("Batch installed {} formulae", names.len());
+                    installed.extend(names);
                 }
                 Err(e) => {
-                    failed.push(item.name.clone());
-                    tracing::error!("Failed to install formula {}: {}", item.name, e);
+                    tracing::warn!("Batch formula install failed, falling back to individual: {}", e);
+                    for item in &package_list.formulae {
+                        let name = item.name.clone();
+                        let package_type = item.package_type;
+                        match tokio::task::spawn_blocking(move || {
+                            BrewCommand::install_package(&name, package_type)
+                        }).await? {
+                            Ok(_) => {
+                                installed.push(item.name.clone());
+                                tracing::info!("Installed formula: {}", item.name);
+                            }
+                            Err(e) => {
+                                failed.push(item.name.clone());
+                                tracing::error!("Failed to install formula {}: {}", item.name, e);
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        // Install casks
-        for item in &package_list.casks {
-            let name = item.name.clone();
-            let package_type = item.package_type.clone();
+        // Batch install casks
+        if !package_list.casks.is_empty() {
+            let names: Vec<String> = package_list.casks.iter().map(|i| i.name.clone()).collect();
+            tracing::info!("Batch installing {} casks", names.len());
 
+            let names_clone = names.clone();
             match tokio::task::spawn_blocking(move || {
-                BrewCommand::install_package(&name, package_type)
-            })
-            .await?
-            {
+                let args: Vec<&str> = std::iter::once("install")
+                    .chain(std::iter::once("--cask"))
+                    .chain(names_clone.iter().map(|s| s.as_str()))
+                    .collect();
+                BrewCommand::execute_brew(&args)
+            }).await? {
                 Ok(_) => {
-                    installed.push(item.name.clone());
-                    tracing::info!("Successfully installed cask: {}", item.name);
+                    tracing::info!("Batch installed {} casks", names.len());
+                    installed.extend(names);
                 }
                 Err(e) => {
-                    failed.push(item.name.clone());
-                    tracing::error!("Failed to install cask {}: {}", item.name, e);
+                    tracing::warn!("Batch cask install failed, falling back to individual: {}", e);
+                    for item in &package_list.casks {
+                        let name = item.name.clone();
+                        let package_type = item.package_type;
+                        match tokio::task::spawn_blocking(move || {
+                            BrewCommand::install_package(&name, package_type)
+                        }).await? {
+                            Ok(_) => {
+                                installed.push(item.name.clone());
+                                tracing::info!("Installed cask: {}", item.name);
+                            }
+                            Err(e) => {
+                                failed.push(item.name.clone());
+                                tracing::error!("Failed to install cask {}: {}", item.name, e);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -132,5 +168,66 @@ impl PackageListRepository for BrewPackageListRepository {
         }
 
         Ok(installed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn repo() -> BrewPackageListRepository {
+        BrewPackageListRepository::new()
+    }
+
+    #[test]
+    fn parse_package_list_formulae_and_casks() {
+        let output = "FORMULAE\nwget 1.21.4\ncurl 8.4.0\n\nCASKS\nfirefox 120.0\n";
+        let result = repo().parse_package_list(output).unwrap();
+        assert_eq!(result.formulae.len(), 2);
+        assert_eq!(result.casks.len(), 1);
+        assert_eq!(result.formulae[0].name, "wget");
+        assert_eq!(result.formulae[0].version.as_deref(), Some("1.21.4"));
+        assert_eq!(result.formulae[0].package_type, PackageType::Formula);
+        assert_eq!(result.casks[0].name, "firefox");
+        assert_eq!(result.casks[0].package_type, PackageType::Cask);
+    }
+
+    #[test]
+    fn parse_package_list_formulae_only() {
+        let output = "FORMULAE\ngit 2.43.0\n";
+        let result = repo().parse_package_list(output).unwrap();
+        assert_eq!(result.formulae.len(), 1);
+        assert!(result.casks.is_empty());
+    }
+
+    #[test]
+    fn parse_package_list_no_version() {
+        let output = "FORMULAE\nwget\n";
+        let result = repo().parse_package_list(output).unwrap();
+        assert_eq!(result.formulae.len(), 1);
+        assert_eq!(result.formulae[0].name, "wget");
+        assert!(result.formulae[0].version.is_none());
+    }
+
+    #[test]
+    fn parse_package_list_empty() {
+        let output = "";
+        let result = repo().parse_package_list(output).unwrap();
+        assert!(result.formulae.is_empty());
+        assert!(result.casks.is_empty());
+    }
+
+    #[test]
+    fn parse_package_list_export_date_set() {
+        let output = "FORMULAE\nwget 1.0\n";
+        let result = repo().parse_package_list(output).unwrap();
+        assert!(result.export_date.is_some());
+    }
+
+    #[test]
+    fn total_count() {
+        let output = "FORMULAE\nwget 1.0\ncurl 2.0\n\nCASKS\nfirefox 120.0\n";
+        let result = repo().parse_package_list(output).unwrap();
+        assert_eq!(result.total_count(), 3);
     }
 }

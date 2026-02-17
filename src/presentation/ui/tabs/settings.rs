@@ -9,6 +9,10 @@ pub enum SettingsAction {
     UpdateAll,
     ExportPackages,
     ImportPackages,
+    RunDoctor,
+    LoadTaps,
+    Tap(String),
+    Untap(String),
 }
 
 pub struct SettingsTab;
@@ -20,6 +24,9 @@ impl SettingsTab {
         log_manager: &mut LogManager,
         loading_export: bool,
         loading_import: bool,
+        doctor_output: &Option<String>,
+        taps: &[String],
+        new_tap_name: &mut String,
     ) -> Vec<SettingsAction> {
         let mut actions = Vec::new();
 
@@ -85,54 +92,108 @@ impl SettingsTab {
                     });
                 });
 
-                // Column 2: Maintenance
+                // Column 2: Maintenance & Doctor
                 columns[1].vertical(|ui| {
-                    ui.heading("Maintenance");
-                    ui.separator();
-                    ui.vertical_centered(|ui| {
-                        if ui.button("Clean Cache").clicked() {
-                            actions.push(SettingsAction::ShowCleanupPreview(CleanupType::Cache));
+                    ui.group(|ui| {
+                        ui.heading("Maintenance");
+                        ui.vertical_centered(|ui| {
+                            if ui.button("Clean Cache").clicked() {
+                                actions.push(SettingsAction::ShowCleanupPreview(CleanupType::Cache));
+                            }
+                            ui.label("Remove old downloads");
+
+                            ui.add_space(10.0);
+
+                            if ui.button("Cleanup Old Versions").clicked() {
+                                actions.push(SettingsAction::ShowCleanupPreview(CleanupType::OldVersions));
+                            }
+                            ui.label("Remove old versions");
+
+                            ui.add_space(10.0);
+
+                            if ui.button("Update All Packages").clicked() {
+                                actions.push(SettingsAction::UpdateAll);
+                            }
+                            ui.label("Update all installed");
+                        });
+                    });
+
+                    ui.add_space(10.0);
+
+                    ui.group(|ui| {
+                        ui.heading("🩺 Brew Doctor");
+                        if ui.button("Run Diagnostics").clicked() {
+                            actions.push(SettingsAction::RunDoctor);
                         }
-                        ui.label("Remove old downloads");
-
-                        ui.add_space(10.0);
-
-                        if ui.button("Cleanup Old Versions").clicked() {
-                            actions.push(SettingsAction::ShowCleanupPreview(CleanupType::OldVersions));
+                        if let Some(output) = doctor_output {
+                            ui.separator();
+                            egui::ScrollArea::vertical()
+                                .id_salt("doctor_output")
+                                .max_height(200.0)
+                                .show(ui, |ui| {
+                                    ui.monospace(output);
+                                });
                         }
-                        ui.label("Remove old versions");
-
-                        ui.add_space(10.0);
-
-                        if ui.button("Update All Packages").clicked() {
-                            actions.push(SettingsAction::UpdateAll);
-                        }
-                        ui.label("Update all installed");
                     });
                 });
 
-                // Column 3: Package Mgmt
+                // Column 3: Package Mgmt & Taps
                 columns[2].vertical(|ui| {
-                    ui.heading("Management");
-                    ui.separator();
-                    ui.vertical_centered(|ui| {
-                        if ui
-                            .add_enabled(!loading_export, egui::Button::new("Export Packages"))
-                            .clicked()
-                        {
-                            actions.push(SettingsAction::ExportPackages);
-                        }
-                        ui.label("Export to JSON");
+                    ui.group(|ui| {
+                        ui.heading("Management");
+                        ui.vertical_centered(|ui| {
+                            if ui
+                                .add_enabled(!loading_export, egui::Button::new("Export Packages"))
+                                .clicked()
+                            {
+                                actions.push(SettingsAction::ExportPackages);
+                            }
+                            ui.label("Export to JSON");
 
-                        ui.add_space(10.0);
+                            ui.add_space(10.0);
 
-                        if ui
-                            .add_enabled(!loading_import, egui::Button::new("Import Packages"))
-                            .clicked()
-                        {
-                            actions.push(SettingsAction::ImportPackages);
+                            if ui
+                                .add_enabled(!loading_import, egui::Button::new("Import Packages"))
+                                .clicked()
+                            {
+                                actions.push(SettingsAction::ImportPackages);
+                            }
+                            ui.label("Import from JSON");
+                        });
+                    });
+
+                    ui.add_space(10.0);
+
+                    ui.group(|ui| {
+                        ui.heading("🔌 Taps");
+                        ui.horizontal(|ui| {
+                            if ui.button("Refresh Taps").clicked() {
+                                actions.push(SettingsAction::LoadTaps);
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            ui.text_edit_singleline(new_tap_name);
+                            if ui.button("Add Tap").clicked() && !new_tap_name.is_empty() {
+                                actions.push(SettingsAction::Tap(new_tap_name.clone()));
+                                new_tap_name.clear();
+                            }
+                        });
+                        if !taps.is_empty() {
+                            ui.separator();
+                            egui::ScrollArea::vertical()
+                                .id_salt("taps_list")
+                                .max_height(150.0)
+                                .show(ui, |ui| {
+                                    for tap in taps {
+                                        ui.horizontal(|ui| {
+                                            ui.label(tap);
+                                            if ui.small_button("✕").clicked() {
+                                                actions.push(SettingsAction::Untap(tap.clone()));
+                                            }
+                                        });
+                                    }
+                                });
                         }
-                        ui.label("Import from JSON");
                     });
                 });
             });

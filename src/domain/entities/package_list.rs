@@ -62,3 +62,48 @@ impl Default for PackageList {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_package_list_is_empty() {
+        let list = PackageList::new();
+        assert!(list.formulae.is_empty());
+        assert!(list.casks.is_empty());
+        assert!(list.export_date.is_none());
+        assert_eq!(list.total_count(), 0);
+    }
+
+    #[test]
+    fn add_items() {
+        let mut list = PackageList::new();
+        list.add_formula(PackageListItem::new("wget".into(), PackageType::Formula));
+        list.add_cask(PackageListItem::new("firefox".into(), PackageType::Cask));
+        assert_eq!(list.total_count(), 2);
+        assert_eq!(list.formulae.len(), 1);
+        assert_eq!(list.casks.len(), 1);
+    }
+
+    #[test]
+    fn package_list_item_with_version() {
+        let item = PackageListItem::new("curl".into(), PackageType::Formula)
+            .with_version("8.4.0".into());
+        assert_eq!(item.name, "curl");
+        assert_eq!(item.version.as_deref(), Some("8.4.0"));
+    }
+
+    #[test]
+    fn serialize_deserialize() {
+        let mut list = PackageList::new().with_export_date("2024-01-01".into());
+        list.add_formula(
+            PackageListItem::new("wget".into(), PackageType::Formula)
+                .with_version("1.0".into()),
+        );
+        let json = serde_json::to_string(&list).unwrap();
+        let deserialized: PackageList = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.total_count(), 1);
+        assert_eq!(deserialized.export_date.as_deref(), Some("2024-01-01"));
+    }
+}

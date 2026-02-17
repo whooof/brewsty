@@ -17,7 +17,7 @@ impl BrewCommand {
         }
     }
 
-    fn execute_brew(args: &[&str]) -> Result<String> {
+    pub fn execute_brew(args: &[&str]) -> Result<String> {
         let output = Command::new("brew").args(args).output()?;
 
         if !output.status.success() {
@@ -120,7 +120,7 @@ impl BrewCommand {
         tracing::debug!("Running: brew info --json=v2 {} {}", type_arg, name);
 
         let output = Command::new("brew")
-            .args(&["info", "--json=v2", type_arg, name])
+            .args(["info", "--json=v2", type_arg, name])
             .output()?;
 
         if !output.status.success() {
@@ -329,5 +329,48 @@ impl BrewCommand {
         let casks = Self::execute_brew(&["list", "--cask", "--versions"])?;
         
         Ok(format!("FORMULAE\n{}\nCASKS\n{}", formulae, casks))
+    }
+
+    // Health check
+    pub fn doctor() -> Result<String> {
+        // brew doctor exits non-zero when warnings exist, so capture output regardless
+        let output = Command::new("brew").args(["doctor"]).output()?;
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+        Ok(format!("{}{}", stdout, stderr))
+    }
+
+    // Dependencies
+    pub fn deps(name: &str) -> Result<String> {
+        Self::execute_brew(&["deps", "--tree", name])
+    }
+
+    pub fn uses(name: &str) -> Result<String> {
+        Self::execute_brew(&["uses", "--installed", name])
+    }
+
+    // Taps management
+    pub fn list_taps() -> Result<String> {
+        Self::execute_brew(&["tap"])
+    }
+
+    pub fn tap(name: &str) -> Result<BrewOutput> {
+        let output = Command::new("brew").args(["tap", name]).output()?;
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+        if !output.status.success() {
+            return Err(anyhow!("Failed to tap {}: {}", name, stderr));
+        }
+        Ok(BrewOutput { stdout, stderr })
+    }
+
+    pub fn untap(name: &str) -> Result<BrewOutput> {
+        let output = Command::new("brew").args(["untap", name]).output()?;
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+        if !output.status.success() {
+            return Err(anyhow!("Failed to untap {}: {}", name, stderr));
+        }
+        Ok(BrewOutput { stdout, stderr })
     }
 }

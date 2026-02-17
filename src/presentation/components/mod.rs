@@ -10,8 +10,8 @@ pub mod service_list;
 pub mod tab_manager;
 
 pub use cleanup_modal::{CleanupAction, CleanupModal, CleanupType};
-pub use filter_state::FilterState;
-pub use info_modal::InfoModal;
+pub use filter_state::{FilterState, SortField, SortOrder};
+pub use info_modal::{InfoModal, InfoModalAction};
 pub use log_manager::{LogLevel, LogManager};
 pub use merged_package_list::MergedPackageList;
 pub use package_list::PackageList;

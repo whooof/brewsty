@@ -17,6 +17,7 @@ anyhow = "1.0"
 thiserror = "2.0"
 async-trait = "0.1"
 chrono = "0.4"
+dirs = "6.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 rfd = "0.17"
@@ -28,3 +29,10 @@ codegen-units = 1
 
 [profile.release.package."*"]
 opt-level = 3
+
+[package.metadata.bundle]
+name = "Brewsty"
+identifier = "com.brewsty.app"
+category = "public.app-category.utilities"
+short_description = "A GUI for managing Homebrew packages and services"
+osx_minimum_system_version = "10.15"

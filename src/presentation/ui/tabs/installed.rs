@@ -1,5 +1,5 @@
 use crate::domain::entities::{Package, PackageType};
-use crate::presentation::components::{FilterState, InfoModal, MergedPackageList};
+use crate::presentation::components::{FilterState, InfoModal, MergedPackageList, SortField, SortOrder};
 use eframe::egui;
 use std::collections::HashSet;
 
@@ -43,6 +43,27 @@ impl InstalledTab {
             if ui.button("Refresh").clicked() {
                 actions.push(InstalledAction::Refresh);
             }
+            ui.separator();
+
+            let sort_label = |field: SortField, current: SortField, order: SortOrder| -> String {
+                let arrow = if field == current {
+                    match order { SortOrder::Ascending => " ▲", SortOrder::Descending => " ▼" }
+                } else { "" };
+                match field {
+                    SortField::Name => format!("Name{}", arrow),
+                    SortField::Version => format!("Version{}", arrow),
+                    SortField::Type => format!("Type{}", arrow),
+                }
+            };
+
+            let current_field = filter_state.sort_field();
+            let current_order = filter_state.sort_order();
+            if ui.button(sort_label(SortField::Name, current_field, current_order)).clicked() {
+                filter_state.toggle_sort(SortField::Name);
+            }
+            if ui.button(sort_label(SortField::Type, current_field, current_order)).clicked() {
+                filter_state.toggle_sort(SortField::Type);
+            }
         });
 
         ui.separator();
@@ -53,6 +74,8 @@ impl InstalledTab {
                 ui.label("Loading packages...");
             });
         } else {
+            merged_packages.apply_sort(filter_state.sort_field(), filter_state.sort_order());
+
             let mut install_action = None;
             let mut uninstall_action = None;
             let mut update_action = None;

@@ -61,7 +61,7 @@ impl BrewServiceRepository {
 #[async_trait]
 impl ServiceRepository for BrewServiceRepository {
     async fn list_services(&self) -> Result<Vec<Service>> {
-        let output = tokio::task::spawn_blocking(|| BrewCommand::list_services()).await??;
+        let output = tokio::task::spawn_blocking(BrewCommand::list_services).await??;
         self.parse_services_list(&output)
     }
 
@@ -105,5 +105,88 @@ impl ServiceRepository for BrewServiceRepository {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn repo() -> BrewServiceRepository {
+        BrewServiceRepository::new()
+    }
+
+    #[test]
+    fn parse_service_status_started() {
+        assert_eq!(
+            BrewServiceRepository::parse_service_status("started"),
+            ServiceStatus::Started
+        );
+        assert_eq!(
+            BrewServiceRepository::parse_service_status("Started"),
+            ServiceStatus::Started
+        );
+    }
+
+    #[test]
+    fn parse_service_status_stopped() {
+        assert_eq!(
+            BrewServiceRepository::parse_service_status("stopped"),
+            ServiceStatus::Stopped
+        );
+        assert_eq!(
+            BrewServiceRepository::parse_service_status("none"),
+            ServiceStatus::Stopped
+        );
+    }
+
+    #[test]
+    fn parse_service_status_error() {
+        assert_eq!(
+            BrewServiceRepository::parse_service_status("error"),
+            ServiceStatus::Error
+        );
+    }
+
+    #[test]
+    fn parse_service_status_unknown() {
+        assert_eq!(
+            BrewServiceRepository::parse_service_status("something"),
+            ServiceStatus::Unknown
+        );
+    }
+
+    #[test]
+    fn parse_services_list_full() {
+        let output = "Name       Status  User   File\npostgresql started whooof /usr/local/opt/postgresql/homebrew.postgresql.service.plist\nredis      stopped\nnginx      started root   /Library/LaunchDaemons/homebrew.mxcl.nginx.plist\n";
+        let result = repo().parse_services_list(output).unwrap();
+        assert_eq!(result.len(), 3);
+
+        assert_eq!(result[0].name, "postgresql");
+        assert_eq!(result[0].status, ServiceStatus::Started);
+        assert_eq!(result[0].user.as_deref(), Some("whooof"));
+        assert!(result[0].file.is_some());
+
+        assert_eq!(result[1].name, "redis");
+        assert_eq!(result[1].status, ServiceStatus::Stopped);
+        assert!(result[1].user.is_none());
+
+        assert_eq!(result[2].name, "nginx");
+        assert_eq!(result[2].status, ServiceStatus::Started);
+        assert_eq!(result[2].user.as_deref(), Some("root"));
+    }
+
+    #[test]
+    fn parse_services_list_empty() {
+        let output = "Name  Status  User  File\n";
+        let result = repo().parse_services_list(output).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn parse_services_list_header_only() {
+        let output = "Name  Status  User  File\n\n";
+        let result = repo().parse_services_list(output).unwrap();
+        assert!(result.is_empty());
     }
 }

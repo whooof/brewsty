@@ -1,6 +1,15 @@
 use crate::domain::entities::ThemeMode;
 use egui::{Color32, Context, CornerRadius, FontFamily, FontId, Stroke, TextStyle, Visuals};
 
+/// Detects macOS dark mode via `defaults read -g AppleInterfaceStyle`.
+fn is_system_dark_mode() -> bool {
+    std::process::Command::new("defaults")
+        .args(["read", "-g", "AppleInterfaceStyle"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().eq_ignore_ascii_case("dark"))
+        .unwrap_or(true) // default to dark if detection fails
+}
+
 /// Configures egui style with custom fonts, spacing, and theme-aware colors.
 pub fn configure_style(ctx: &Context, theme: ThemeMode) {
     let mut style = (*ctx.style()).clone();
@@ -33,7 +42,13 @@ pub fn configure_style(ctx: &Context, theme: ThemeMode) {
     style.spacing.interact_size = egui::vec2(60.0, 30.0);
 
     let mut visuals = match theme {
-        ThemeMode::System => Visuals::dark(), // Default to dark for "System"
+        ThemeMode::System => {
+            if is_system_dark_mode() {
+                Visuals::dark()
+            } else {
+                Visuals::light()
+            }
+        }
         ThemeMode::Light => Visuals::light(),
         ThemeMode::Dark => Visuals::dark(),
     };

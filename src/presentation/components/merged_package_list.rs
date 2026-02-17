@@ -1,4 +1,5 @@
 use crate::domain::entities::{Package, PackageType};
+use crate::presentation::components::filter_state::{SortField, SortOrder};
 use crate::presentation::components::SelectionState;
 use egui::{Color32, RichText, ScrollArea};
 
@@ -111,6 +112,33 @@ impl MergedPackageList {
 
     pub fn clear_outdated_selection(&mut self) {
         self.outdated_selection.clear();
+    }
+
+    pub fn installed_count(&self) -> usize {
+        self.packages.len()
+    }
+
+    pub fn outdated_count(&self) -> usize {
+        self.outdated_packages.len()
+    }
+
+    pub fn apply_sort(&mut self, field: SortField, order: SortOrder) {
+        let cmp = |a: &Package, b: &Package| -> std::cmp::Ordering {
+            let result = match field {
+                SortField::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                SortField::Version => {
+                    let va = a.version.as_deref().unwrap_or("");
+                    let vb = b.version.as_deref().unwrap_or("");
+                    va.cmp(vb)
+                }
+                SortField::Type => a.package_type.to_string().cmp(&b.package_type.to_string()),
+            };
+            match order {
+                SortOrder::Ascending => result,
+                SortOrder::Descending => result.reverse(),
+            }
+        };
+        self.packages.sort_by(cmp);
     }
 
     pub fn select_all_outdated(&mut self) {
@@ -251,11 +279,10 @@ impl MergedPackageList {
                                         *on_pin = Some(package.clone());
                                     }
 
-                                    if package.description.is_some() {
-                                        if ui.button("Info").clicked() {
+                                    if package.description.is_some()
+                                        && ui.button("Info").clicked() {
                                             self.show_info_action = Some(package.clone());
                                         }
-                                    }
                                 });
 
                                 ui.end_row();
@@ -318,8 +345,7 @@ impl MergedPackageList {
 
                                 let is_selected = self
                                     .selected_package
-                                    .as_ref()
-                                    .map_or(false, |s| s == &package.name);
+                                    .as_ref() == Some(&package.name);
 
                                 if ui.selectable_label(is_selected, &package.name).clicked() {
                                     self.selected_package = Some(package.name.clone());
@@ -367,10 +393,8 @@ impl MergedPackageList {
                                             if ui.button("Unpin").clicked() {
                                                 *on_unpin = Some(package.clone());
                                             }
-                                        } else {
-                                            if ui.button("Pin").clicked() {
-                                                *on_pin = Some(package.clone());
-                                            }
+                                        } else if ui.button("Pin").clicked() {
+                                            *on_pin = Some(package.clone());
                                         }
                                     }
 
@@ -378,11 +402,10 @@ impl MergedPackageList {
                                         if ui.button("Load Info").clicked() {
                                             *on_load_info = Some(package.clone());
                                         }
-                                    } else if package.description.is_some() {
-                                        if ui.button("Info").clicked() {
+                                    } else if package.description.is_some()
+                                        && ui.button("Info").clicked() {
                                             self.show_info_action = Some(package.clone());
                                         }
-                                    }
                                 });
 
                                 ui.end_row();

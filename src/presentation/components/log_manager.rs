@@ -58,7 +58,7 @@ impl LogManager {
             .split(']')
             .next()
             .and_then(|s| s.strip_prefix('['))
-            .and_then(|level_str| LogLevel::from_str(level_str))
+            .and_then(LogLevel::from_str)
             .unwrap_or(LogLevel::Info);
         if self.logs.len() >= MAX_LOG_SIZE {
             self.logs.pop_front();

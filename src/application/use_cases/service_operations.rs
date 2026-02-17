@@ -5,80 +5,32 @@ use crate::domain::{
 use anyhow::Result;
 use std::sync::Arc;
 
-pub struct ServiceRepositoryUseCase {
-    repository: Arc<dyn ServiceRepository>,
-}
-
-impl ServiceRepositoryUseCase {
-    pub fn new(repository: Arc<dyn ServiceRepository>) -> Self {
-        Self { repository }
-    }
-
-    pub fn repository(&self) -> Arc<dyn ServiceRepository> {
-        Arc::clone(&self.repository)
-    }
-}
-
-pub struct ListServices {
-    use_case: ServiceRepositoryUseCase,
-}
-
-impl ListServices {
-    pub fn new(repository: Arc<dyn ServiceRepository>) -> Self {
-        Self {
-            use_case: ServiceRepositoryUseCase::new(repository),
+macro_rules! service_use_case {
+    ($name:ident, $method:ident -> $ret:ty) => {
+        pub struct $name { repository: Arc<dyn ServiceRepository> }
+        impl $name {
+            pub fn new(repository: Arc<dyn ServiceRepository>) -> Self {
+                Self { repository }
+            }
+            pub async fn execute(&self) -> Result<$ret> {
+                self.repository.$method().await
+            }
         }
-    }
-
-    pub async fn execute(&self) -> Result<Vec<Service>> {
-        self.use_case.repository().list_services().await
-    }
-}
-
-pub struct StartService {
-    use_case: ServiceRepositoryUseCase,
-}
-
-impl StartService {
-    pub fn new(repository: Arc<dyn ServiceRepository>) -> Self {
-        Self {
-            use_case: ServiceRepositoryUseCase::new(repository),
+    };
+    ($name:ident, $method:ident(&str) -> $ret:ty) => {
+        pub struct $name { repository: Arc<dyn ServiceRepository> }
+        impl $name {
+            pub fn new(repository: Arc<dyn ServiceRepository>) -> Self {
+                Self { repository }
+            }
+            pub async fn execute(&self, name: &str) -> Result<$ret> {
+                self.repository.$method(name).await
+            }
         }
-    }
-
-    pub async fn execute(&self, service_name: &str) -> Result<()> {
-        self.use_case.repository().start_service(service_name).await
-    }
+    };
 }
 
-pub struct StopService {
-    use_case: ServiceRepositoryUseCase,
-}
-
-impl StopService {
-    pub fn new(repository: Arc<dyn ServiceRepository>) -> Self {
-        Self {
-            use_case: ServiceRepositoryUseCase::new(repository),
-        }
-    }
-
-    pub async fn execute(&self, service_name: &str) -> Result<()> {
-        self.use_case.repository().stop_service(service_name).await
-    }
-}
-
-pub struct RestartService {
-    use_case: ServiceRepositoryUseCase,
-}
-
-impl RestartService {
-    pub fn new(repository: Arc<dyn ServiceRepository>) -> Self {
-        Self {
-            use_case: ServiceRepositoryUseCase::new(repository),
-        }
-    }
-
-    pub async fn execute(&self, service_name: &str) -> Result<()> {
-        self.use_case.repository().restart_service(service_name).await
-    }
-}
+service_use_case!(ListServices, list_services -> Vec<Service>);
+service_use_case!(StartService, start_service(&str) -> ());
+service_use_case!(StopService, stop_service(&str) -> ());
+service_use_case!(RestartService, restart_service(&str) -> ());
