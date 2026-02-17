@@ -18,6 +18,7 @@ pub enum SettingsAction {
 pub struct SettingsTab;
 
 impl SettingsTab {
+    #[allow(clippy::too_many_arguments)]
     pub fn show(
         ui: &mut egui::Ui,
         config: &mut AppConfig,
@@ -39,32 +40,59 @@ impl SettingsTab {
                 columns[0].vertical(|ui| {
                     ui.group(|ui| {
                         ui.heading("General");
-                        
+
                         ui.horizontal(|ui| {
                             ui.label("Theme:");
                             egui::ComboBox::new("theme_combo", "")
                                 .selected_text(format!("{:?}", config.theme))
                                 .show_ui(ui, |ui| {
-                                    if ui.selectable_value(&mut config.theme, ThemeMode::System, "System").clicked() {
+                                    if ui
+                                        .selectable_value(
+                                            &mut config.theme,
+                                            ThemeMode::System,
+                                            "System",
+                                        )
+                                        .clicked()
+                                    {
                                         actions.push(SettingsAction::SaveConfig);
                                         actions.push(SettingsAction::ApplyTheme);
                                     }
-                                    if ui.selectable_value(&mut config.theme, ThemeMode::Light, "Light").clicked() {
+                                    if ui
+                                        .selectable_value(
+                                            &mut config.theme,
+                                            ThemeMode::Light,
+                                            "Light",
+                                        )
+                                        .clicked()
+                                    {
                                         actions.push(SettingsAction::SaveConfig);
                                         actions.push(SettingsAction::ApplyTheme);
                                     }
-                                    if ui.selectable_value(&mut config.theme, ThemeMode::Dark, "Dark").clicked() {
+                                    if ui
+                                        .selectable_value(
+                                            &mut config.theme,
+                                            ThemeMode::Dark,
+                                            "Dark",
+                                        )
+                                        .clicked()
+                                    {
                                         actions.push(SettingsAction::SaveConfig);
                                         actions.push(SettingsAction::ApplyTheme);
                                     }
                                 });
                         });
 
-                        if ui.checkbox(&mut config.auto_update_check, "Check updates on startup").changed() {
+                        if ui
+                            .checkbox(&mut config.auto_update_check, "Check updates on startup")
+                            .changed()
+                        {
                             actions.push(SettingsAction::SaveConfig);
                         }
 
-                        if ui.checkbox(&mut config.confirm_before_actions, "Confirm danger actions").changed() {
+                        if ui
+                            .checkbox(&mut config.confirm_before_actions, "Confirm danger actions")
+                            .changed()
+                        {
                             actions.push(SettingsAction::SaveConfig);
                         }
                     });
@@ -80,14 +108,22 @@ impl SettingsTab {
                             let mut error = log_manager.is_level_visible(LogLevel::Error);
 
                             ui.checkbox(&mut debug, "Debug");
-                             ui.checkbox(&mut info, "Info");
+                            ui.checkbox(&mut info, "Info");
                             ui.checkbox(&mut warn, "Warn");
                             ui.checkbox(&mut error, "Error");
 
-                            if debug != log_manager.is_level_visible(LogLevel::Debug) { log_manager.set_level_visible(LogLevel::Debug, debug); }
-                            if info != log_manager.is_level_visible(LogLevel::Info) { log_manager.set_level_visible(LogLevel::Info, info); }
-                            if warn != log_manager.is_level_visible(LogLevel::Warn) { log_manager.set_level_visible(LogLevel::Warn, warn); }
-                            if error != log_manager.is_level_visible(LogLevel::Error) { log_manager.set_level_visible(LogLevel::Error, error); }
+                            if debug != log_manager.is_level_visible(LogLevel::Debug) {
+                                log_manager.set_level_visible(LogLevel::Debug, debug);
+                            }
+                            if info != log_manager.is_level_visible(LogLevel::Info) {
+                                log_manager.set_level_visible(LogLevel::Info, info);
+                            }
+                            if warn != log_manager.is_level_visible(LogLevel::Warn) {
+                                log_manager.set_level_visible(LogLevel::Warn, warn);
+                            }
+                            if error != log_manager.is_level_visible(LogLevel::Error) {
+                                log_manager.set_level_visible(LogLevel::Error, error);
+                            }
                         });
                     });
                 });
@@ -98,14 +134,17 @@ impl SettingsTab {
                         ui.heading("Maintenance");
                         ui.vertical_centered(|ui| {
                             if ui.button("Clean Cache").clicked() {
-                                actions.push(SettingsAction::ShowCleanupPreview(CleanupType::Cache));
+                                actions
+                                    .push(SettingsAction::ShowCleanupPreview(CleanupType::Cache));
                             }
                             ui.label("Remove old downloads");
 
                             ui.add_space(10.0);
 
                             if ui.button("Cleanup Old Versions").clicked() {
-                                actions.push(SettingsAction::ShowCleanupPreview(CleanupType::OldVersions));
+                                actions.push(SettingsAction::ShowCleanupPreview(
+                                    CleanupType::OldVersions,
+                                ));
                             }
                             ui.label("Remove old versions");
 

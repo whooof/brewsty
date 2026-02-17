@@ -34,6 +34,7 @@ impl PackageList {
         self.show_info_action.take()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn show_filtered_with_search_and_pin(
         &mut self,
         ui: &mut egui::Ui,
@@ -81,9 +82,7 @@ impl PackageList {
                                 continue;
                             }
 
-                            let is_selected = self
-                                .selected_package
-                                .as_ref() == Some(&package.name);
+                            let is_selected = self.selected_package.as_ref() == Some(&package.name);
 
                             if ui.selectable_label(is_selected, &package.name).clicked() {
                                 self.selected_package = Some(package.name.clone());
@@ -172,9 +171,10 @@ impl PackageList {
                                         *on_load_info = Some(package.clone());
                                     }
                                 } else if package.description.is_some()
-                                    && ui.button("Info").clicked() {
-                                        self.show_info_action = Some(package.clone());
-                                    }
+                                    && ui.button("Info").clicked()
+                                {
+                                    self.show_info_action = Some(package.clone());
+                                }
                             });
 
                             ui.end_row();

@@ -11,6 +11,7 @@ impl AsyncExecutor {
         Self { handle }
     }
 
+    #[allow(dead_code)]
     pub fn execute<F, T>(&self, future: F) -> T
     where
         F: Future<Output = T> + Send,

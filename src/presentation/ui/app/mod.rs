@@ -72,6 +72,7 @@ pub struct BrewstyApp {
     pub(super) doctor_output: Option<String>,
     pub(super) taps: Vec<String>,
     pub(super) new_tap_name: String,
+    #[allow(clippy::type_complexity)]
     pub(super) pending_deps_load: Option<Arc<Mutex<Option<(String, String)>>>>,
 }
 
@@ -229,10 +230,7 @@ impl eframe::App for BrewstyApp {
                 if ui
                     .selectable_label(
                         self.tab_manager.is_current(Tab::Installed),
-                        format!(
-                            "Installed ({})",
-                            self.merged_packages.installed_count()
-                        ),
+                        format!("Installed ({})", self.merged_packages.installed_count()),
                     )
                     .clicked()
                 {
@@ -253,10 +251,7 @@ impl eframe::App for BrewstyApp {
                 if ui
                     .selectable_label(
                         self.tab_manager.is_current(Tab::Services),
-                        format!(
-                            "Services ({})",
-                            self.service_list.service_count()
-                        ),
+                        format!("Services ({})", self.service_list.service_count()),
                     )
                     .clicked()
                 {
@@ -475,16 +470,17 @@ impl eframe::App for BrewstyApp {
                     let deps = tokio::task::spawn_blocking({
                         let n = name_clone.clone();
                         move || crate::infrastructure::brew::command::BrewCommand::deps(&n)
-                    }).await.unwrap_or(Err(anyhow::anyhow!("task failed")));
+                    })
+                    .await
+                    .unwrap_or(Err(anyhow::anyhow!("task failed")));
                     let uses = tokio::task::spawn_blocking({
                         let n = name_clone;
                         move || crate::infrastructure::brew::command::BrewCommand::uses(&n)
-                    }).await.unwrap_or(Err(anyhow::anyhow!("task failed")));
+                    })
+                    .await
+                    .unwrap_or(Err(anyhow::anyhow!("task failed")));
                     if let Ok(mut guard) = deps_clone.lock() {
-                        *guard = Some((
-                            deps.unwrap_or_default(),
-                            uses.unwrap_or_default(),
-                        ));
+                        *guard = Some((deps.unwrap_or_default(), uses.unwrap_or_default()));
                     }
                 });
                 self.pending_deps_load = Some(info_modal_deps);
@@ -499,7 +495,10 @@ impl eframe::App for BrewstyApp {
                     ),
                     ConfirmAction::Uninstall(pkg) => (
                         "Confirm Uninstall".to_string(),
-                        format!("Uninstall {} ({})? This cannot be undone.", pkg.name, pkg.package_type),
+                        format!(
+                            "Uninstall {} ({})? This cannot be undone.",
+                            pkg.name, pkg.package_type
+                        ),
                     ),
                     ConfirmAction::Update(pkg) => (
                         "Confirm Update".to_string(),

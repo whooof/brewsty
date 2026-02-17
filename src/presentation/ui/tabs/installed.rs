@@ -1,5 +1,7 @@
 use crate::domain::entities::{Package, PackageType};
-use crate::presentation::components::{FilterState, InfoModal, MergedPackageList, SortField, SortOrder};
+use crate::presentation::components::{
+    FilterState, InfoModal, MergedPackageList, SortField, SortOrder,
+};
 use eframe::egui;
 use std::collections::HashSet;
 
@@ -47,8 +49,13 @@ impl InstalledTab {
 
             let sort_label = |field: SortField, current: SortField, order: SortOrder| -> String {
                 let arrow = if field == current {
-                    match order { SortOrder::Ascending => " ▲", SortOrder::Descending => " ▼" }
-                } else { "" };
+                    match order {
+                        SortOrder::Ascending => " (asc)",
+                        SortOrder::Descending => " (desc)",
+                    }
+                } else {
+                    ""
+                };
                 match field {
                     SortField::Name => format!("Name{}", arrow),
                     SortField::Version => format!("Version{}", arrow),
@@ -58,10 +65,16 @@ impl InstalledTab {
 
             let current_field = filter_state.sort_field();
             let current_order = filter_state.sort_order();
-            if ui.button(sort_label(SortField::Name, current_field, current_order)).clicked() {
+            if ui
+                .button(sort_label(SortField::Name, current_field, current_order))
+                .clicked()
+            {
                 filter_state.toggle_sort(SortField::Name);
             }
-            if ui.button(sort_label(SortField::Type, current_field, current_order)).clicked() {
+            if ui
+                .button(sort_label(SortField::Type, current_field, current_order))
+                .clicked()
+            {
                 filter_state.toggle_sort(SortField::Type);
             }
         });

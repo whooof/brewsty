@@ -41,18 +41,18 @@ impl BrewPackageListRepository {
                 // Format from "brew list --versions": "package-name version1 version2 ..."
                 // We'll take the first version if multiple exist
                 let parts: Vec<&str> = trimmed.split_whitespace().collect();
-                
+
                 if parts.is_empty() {
                     continue;
                 }
-                
+
                 let name = parts[0].to_string();
                 let version = if parts.len() > 1 {
                     Some(parts[1].to_string())
                 } else {
                     None
                 };
-                
+
                 let mut item = PackageListItem::new(name, *package_type);
                 if let Some(ver) = version {
                     item = item.with_version(ver);
@@ -82,7 +82,11 @@ impl PackageListRepository for BrewPackageListRepository {
 
         // Batch install formulae
         if !package_list.formulae.is_empty() {
-            let names: Vec<String> = package_list.formulae.iter().map(|i| i.name.clone()).collect();
+            let names: Vec<String> = package_list
+                .formulae
+                .iter()
+                .map(|i| i.name.clone())
+                .collect();
             tracing::info!("Batch installing {} formulae", names.len());
 
             let names_clone = names.clone();
@@ -92,19 +96,26 @@ impl PackageListRepository for BrewPackageListRepository {
                     .chain(names_clone.iter().map(|s| s.as_str()))
                     .collect();
                 BrewCommand::execute_brew(&args)
-            }).await? {
+            })
+            .await?
+            {
                 Ok(_) => {
                     tracing::info!("Batch installed {} formulae", names.len());
                     installed.extend(names);
                 }
                 Err(e) => {
-                    tracing::warn!("Batch formula install failed, falling back to individual: {}", e);
+                    tracing::warn!(
+                        "Batch formula install failed, falling back to individual: {}",
+                        e
+                    );
                     for item in &package_list.formulae {
                         let name = item.name.clone();
                         let package_type = item.package_type;
                         match tokio::task::spawn_blocking(move || {
                             BrewCommand::install_package(&name, package_type)
-                        }).await? {
+                        })
+                        .await?
+                        {
                             Ok(_) => {
                                 installed.push(item.name.clone());
                                 tracing::info!("Installed formula: {}", item.name);
@@ -131,19 +142,26 @@ impl PackageListRepository for BrewPackageListRepository {
                     .chain(names_clone.iter().map(|s| s.as_str()))
                     .collect();
                 BrewCommand::execute_brew(&args)
-            }).await? {
+            })
+            .await?
+            {
                 Ok(_) => {
                     tracing::info!("Batch installed {} casks", names.len());
                     installed.extend(names);
                 }
                 Err(e) => {
-                    tracing::warn!("Batch cask install failed, falling back to individual: {}", e);
+                    tracing::warn!(
+                        "Batch cask install failed, falling back to individual: {}",
+                        e
+                    );
                     for item in &package_list.casks {
                         let name = item.name.clone();
                         let package_type = item.package_type;
                         match tokio::task::spawn_blocking(move || {
                             BrewCommand::install_package(&name, package_type)
-                        }).await? {
+                        })
+                        .await?
+                        {
                             Ok(_) => {
                                 installed.push(item.name.clone());
                                 tracing::info!("Installed cask: {}", item.name);

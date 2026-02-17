@@ -53,9 +53,7 @@ impl ServiceList {
                         ui.end_row();
 
                         for service in &self.services {
-                            let is_selected = self
-                                .selected_service
-                                .as_ref() == Some(&service.name);
+                            let is_selected = self.selected_service.as_ref() == Some(&service.name);
 
                             if ui.selectable_label(is_selected, &service.name).clicked() {
                                 self.selected_service = Some(service.name.clone());
@@ -89,20 +87,20 @@ impl ServiceList {
                             ui.label(service.file.as_deref().unwrap_or("N/A"));
 
                             ui.add_enabled_ui(!is_operating, |ui| {
-                                ui.horizontal(|ui| {
-                                    match &service.status {
-                                        ServiceStatus::Started => {
-                                            if ui.button("Stop").clicked() {
-                                                *on_stop = Some(service.name.clone());
-                                            }
-                                            if ui.button("Restart").clicked() {
-                                                *on_restart = Some(service.name.clone());
-                                            }
+                                ui.horizontal(|ui| match &service.status {
+                                    ServiceStatus::Started => {
+                                        if ui.button("Stop").clicked() {
+                                            *on_stop = Some(service.name.clone());
                                         }
-                                        ServiceStatus::Stopped | ServiceStatus::Error | ServiceStatus::Unknown => {
-                                            if ui.button("Start").clicked() {
-                                                *on_start = Some(service.name.clone());
-                                            }
+                                        if ui.button("Restart").clicked() {
+                                            *on_restart = Some(service.name.clone());
+                                        }
+                                    }
+                                    ServiceStatus::Stopped
+                                    | ServiceStatus::Error
+                                    | ServiceStatus::Unknown => {
+                                        if ui.button("Start").clicked() {
+                                            *on_start = Some(service.name.clone());
                                         }
                                     }
                                 });

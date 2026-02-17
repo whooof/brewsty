@@ -1,5 +1,5 @@
 use crate::domain::entities::PackageType;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::process::{Command, Stdio};
 
 pub struct BrewOutput {
@@ -327,7 +327,7 @@ impl BrewCommand {
         // Get list of formulae and casks with versions
         let formulae = Self::execute_brew(&["list", "--formula", "--versions"])?;
         let casks = Self::execute_brew(&["list", "--cask", "--versions"])?;
-        
+
         Ok(format!("FORMULAE\n{}\nCASKS\n{}", formulae, casks))
     }
 

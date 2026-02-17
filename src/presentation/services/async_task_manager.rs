@@ -191,7 +191,10 @@ pub struct TaskResult {
     pub restart_service_completed: Option<(String, bool, String)>,
     pub export_packages_completed: Option<(bool, String)>,
     pub import_packages_completed: Option<(bool, String)>,
-    pub cleanup_preview_result: Option<(crate::presentation::components::CleanupType, Result<CleanupPreview, String>)>,
+    pub cleanup_preview_result: Option<(
+        crate::presentation::components::CleanupType,
+        Result<CleanupPreview, String>,
+    )>,
     pub doctor_result: Option<Result<String, String>>,
     pub taps: Option<Vec<String>>,
     pub tap_completed: Option<(bool, String)>,
@@ -243,16 +246,19 @@ impl AsyncTaskManager {
 
     pub fn set_active_task(&mut self, task: AsyncTask) {
         if let Some(kind) = task.kind()
-            && self.has_task_kind(kind) {
-                tracing::warn!("{:?} task is already running, ignoring duplicate", kind);
-                return;
-            }
+            && self.has_task_kind(kind)
+        {
+            tracing::warn!("{:?} task is already running, ignoring duplicate", kind);
+            return;
+        }
 
         self.active_tasks.push(task);
     }
 
     pub fn has_task_kind(&self, kind: TaskKind) -> bool {
-        self.active_tasks.iter().any(|task| task.kind() == Some(kind))
+        self.active_tasks
+            .iter()
+            .any(|task| task.kind() == Some(kind))
     }
 
     pub fn add_package_info_task(&mut self, package_name: String, task: AsyncTask) {
@@ -330,11 +336,12 @@ impl AsyncTaskManager {
 
         for (pkg_name, task) in self.package_info_tasks.drain(..) {
             if let AsyncTask::LoadPackageInfo {
-                    package_name,
-                    package_type,
-                    result: pkg_result,
-                    started_at,
-                } = task {
+                package_name,
+                package_type,
+                result: pkg_result,
+                started_at,
+            } = task
+            {
                 let elapsed = started_at.elapsed();
 
                 if elapsed > std::time::Duration::from_secs(10) {
@@ -415,68 +422,136 @@ impl AsyncTaskManager {
                         active_tasks_to_keep.push(AsyncTask::Search { results, logs });
                     }
                 }
-                AsyncTask::Install { success, logs, message } => {
+                AsyncTask::Install {
+                    success,
+                    logs,
+                    message,
+                } => {
                     if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
                         result.install_completed = Some((ok, msg));
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::Install { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::Install {
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::Uninstall { success, logs, message } => {
+                AsyncTask::Uninstall {
+                    success,
+                    logs,
+                    message,
+                } => {
                     if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
                         result.uninstall_completed = Some((ok, msg));
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::Uninstall { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::Uninstall {
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::Update { success, logs, message } => {
+                AsyncTask::Update {
+                    success,
+                    logs,
+                    message,
+                } => {
                     if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
                         result.update_completed = Some((ok, msg));
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::Update { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::Update {
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::UpdateAll { success, logs, message } => {
+                AsyncTask::UpdateAll {
+                    success,
+                    logs,
+                    message,
+                } => {
                     if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
                         result.update_all_completed = Some((ok, msg));
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::UpdateAll { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::UpdateAll {
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::CleanCache { success, logs, message } => {
+                AsyncTask::CleanCache {
+                    success,
+                    logs,
+                    message,
+                } => {
                     if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
                         result.clean_cache_completed = Some((ok, msg));
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::CleanCache { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::CleanCache {
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::CleanupOldVersions { success, logs, message } => {
+                AsyncTask::CleanupOldVersions {
+                    success,
+                    logs,
+                    message,
+                } => {
                     if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
                         result.cleanup_old_versions_completed = Some((ok, msg));
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::CleanupOldVersions { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::CleanupOldVersions {
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::Pin { package_name, success, logs, message } => {
+                AsyncTask::Pin {
+                    package_name,
+                    success,
+                    logs,
+                    message,
+                } => {
                     if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
                         result.pin_completed = Some((package_name, ok, msg));
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::Pin { package_name, success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::Pin {
+                            package_name,
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::Unpin { package_name, success, logs, message } => {
+                AsyncTask::Unpin {
+                    package_name,
+                    success,
+                    logs,
+                    message,
+                } => {
                     if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
                         result.unpin_completed = Some((package_name, ok, msg));
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::Unpin { package_name, success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::Unpin {
+                            package_name,
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
                 AsyncTask::LoadServices { services, logs } => {
@@ -487,50 +562,101 @@ impl AsyncTaskManager {
                         active_tasks_to_keep.push(AsyncTask::LoadServices { services, logs });
                     }
                 }
-                AsyncTask::StartService { service_name, success, logs, message } => {
+                AsyncTask::StartService {
+                    service_name,
+                    success,
+                    logs,
+                    message,
+                } => {
                     if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
                         result.start_service_completed = Some((service_name, ok, msg));
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::StartService { service_name, success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::StartService {
+                            service_name,
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::StopService { service_name, success, logs, message } => {
+                AsyncTask::StopService {
+                    service_name,
+                    success,
+                    logs,
+                    message,
+                } => {
                     if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
                         result.stop_service_completed = Some((service_name, ok, msg));
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::StopService { service_name, success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::StopService {
+                            service_name,
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::RestartService { service_name, success, logs, message } => {
+                AsyncTask::RestartService {
+                    service_name,
+                    success,
+                    logs,
+                    message,
+                } => {
                     if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
                         result.restart_service_completed = Some((service_name, ok, msg));
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::RestartService { service_name, success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::RestartService {
+                            service_name,
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::ExportPackages { success, logs, message } => {
+                AsyncTask::ExportPackages {
+                    success,
+                    logs,
+                    message,
+                } => {
                     if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
                         result.export_packages_completed = Some((ok, msg));
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::ExportPackages { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::ExportPackages {
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::ImportPackages { success, logs, message } => {
+                AsyncTask::ImportPackages {
+                    success,
+                    logs,
+                    message,
+                } => {
                     if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
                         result.import_packages_completed = Some((ok, msg));
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::ImportPackages { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::ImportPackages {
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::CleanupPreview { cleanup_type, preview, error } => {
+                AsyncTask::CleanupPreview {
+                    cleanup_type,
+                    preview,
+                    error,
+                } => {
                     let done = if let Ok(err) = error.try_lock() {
                         if let Some(err_msg) = err.as_ref() {
-                            result.cleanup_preview_result = Some((cleanup_type, Err(err_msg.clone())));
+                            result.cleanup_preview_result =
+                                Some((cleanup_type, Err(err_msg.clone())));
                             true
                         } else if let Ok(prev) = preview.try_lock() {
                             if let Some(p) = prev.as_ref() {
@@ -546,10 +672,17 @@ impl AsyncTaskManager {
                         false
                     };
                     if !done {
-                        active_tasks_to_keep.push(AsyncTask::CleanupPreview { cleanup_type, preview, error });
+                        active_tasks_to_keep.push(AsyncTask::CleanupPreview {
+                            cleanup_type,
+                            preview,
+                            error,
+                        });
                     }
                 }
-                AsyncTask::Doctor { result: doc_result, error } => {
+                AsyncTask::Doctor {
+                    result: doc_result,
+                    error,
+                } => {
                     let done = if let Ok(err) = error.try_lock() {
                         if let Some(err_msg) = err.as_ref() {
                             result.doctor_result = Some(Err(err_msg.clone()));
@@ -568,7 +701,10 @@ impl AsyncTaskManager {
                         false
                     };
                     if !done {
-                        active_tasks_to_keep.push(AsyncTask::Doctor { result: doc_result, error });
+                        active_tasks_to_keep.push(AsyncTask::Doctor {
+                            result: doc_result,
+                            error,
+                        });
                     }
                 }
                 AsyncTask::LoadTaps { taps, logs } => {
@@ -579,20 +715,36 @@ impl AsyncTaskManager {
                         active_tasks_to_keep.push(AsyncTask::LoadTaps { taps, logs });
                     }
                 }
-                AsyncTask::Tap { success, logs, message } => {
+                AsyncTask::Tap {
+                    success,
+                    logs,
+                    message,
+                } => {
                     if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
                         result.tap_completed = Some((ok, msg));
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::Tap { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::Tap {
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
-                AsyncTask::Untap { success, logs, message } => {
+                AsyncTask::Untap {
+                    success,
+                    logs,
+                    message,
+                } => {
                     if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
                         result.untap_completed = Some((ok, msg));
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::Untap { success, logs, message });
+                        active_tasks_to_keep.push(AsyncTask::Untap {
+                            success,
+                            logs,
+                            message,
+                        });
                     }
                 }
                 AsyncTask::LoadPackageInfo { .. } => {}

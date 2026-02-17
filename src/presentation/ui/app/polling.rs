@@ -69,10 +69,11 @@ impl BrewstyApp {
                 self.current_install_package = None;
             } else if self.is_password_error(&message) {
                 if let Some(pkg_name) = &installed_pkg_name
-                    && let Some(pkg) = self.search_results.get_package(pkg_name) {
-                        self.pending_operation = Some(PendingOperation::Install(pkg));
-                        self.password_modal.show(format!("Install {}", pkg_name));
-                    }
+                    && let Some(pkg) = self.search_results.get_package(pkg_name)
+                {
+                    self.pending_operation = Some(PendingOperation::Install(pkg));
+                    self.password_modal.show(format!("Install {}", pkg_name));
+                }
             } else {
                 self.current_install_package = None;
             }
@@ -94,10 +95,11 @@ impl BrewstyApp {
                 self.current_uninstall_package = None;
             } else if self.is_password_error(&message) {
                 if let Some(pkg_name) = &uninstall_pkg_name
-                    && let Some(pkg) = self.merged_packages.get_package(pkg_name) {
-                        self.pending_operation = Some(PendingOperation::Uninstall(pkg));
-                        self.password_modal.show(format!("Uninstall {}", pkg_name));
-                    }
+                    && let Some(pkg) = self.merged_packages.get_package(pkg_name)
+                {
+                    self.pending_operation = Some(PendingOperation::Uninstall(pkg));
+                    self.password_modal.show(format!("Uninstall {}", pkg_name));
+                }
             } else {
                 self.current_uninstall_package = None;
             }
@@ -112,12 +114,11 @@ impl BrewstyApp {
             }
             self.status_message = message;
 
-            if success
-                && let Some(pkg_name) = pkg {
-                    self.merged_packages.mark_package_updated(&pkg_name);
-                    self.merged_packages
-                        .remove_from_outdated_selection_by_name(&pkg_name);
-                }
+            if success && let Some(pkg_name) = pkg {
+                self.merged_packages.mark_package_updated(&pkg_name);
+                self.merged_packages
+                    .remove_from_outdated_selection_by_name(&pkg_name);
+            }
 
             if self.loading_update_all && !self.pending_updates.is_empty() {
                 self.process_next_pending_update();
@@ -276,9 +277,10 @@ impl BrewstyApp {
         self.log_manager.extend(result.logs);
 
         // Poll pending deps load for info modal
-        let deps_ready = self.pending_deps_load.as_ref().and_then(|arc| {
-            arc.try_lock().ok().and_then(|guard| guard.clone())
-        });
+        let deps_ready = self
+            .pending_deps_load
+            .as_ref()
+            .and_then(|arc| arc.try_lock().ok().and_then(|guard| guard.clone()));
         if let Some((deps, used_by)) = deps_ready {
             self.info_modal.set_deps(deps, used_by);
             self.pending_deps_load = None;

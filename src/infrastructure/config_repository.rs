@@ -23,11 +23,10 @@ impl ConfigRepository {
             return Ok(AppConfig::default());
         }
 
-        let content = fs::read_to_string(&self.config_path)
-            .context("Failed to read config file")?;
-        
-        let config = serde_json::from_str(&content)
-            .context("Failed to parse config file")?;
+        let content =
+            fs::read_to_string(&self.config_path).context("Failed to read config file")?;
+
+        let config = serde_json::from_str(&content).context("Failed to parse config file")?;
 
         Ok(config)
     }
@@ -37,11 +36,9 @@ impl ConfigRepository {
             fs::create_dir_all(parent).context("Failed to create config directory")?;
         }
 
-        let content = serde_json::to_string_pretty(config)
-            .context("Failed to serialize config")?;
+        let content = serde_json::to_string_pretty(config).context("Failed to serialize config")?;
 
-        fs::write(&self.config_path, content)
-            .context("Failed to write config file")?;
+        fs::write(&self.config_path, content).context("Failed to write config file")?;
 
         Ok(())
     }

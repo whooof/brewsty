@@ -1,4 +1,5 @@
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[allow(dead_code)]
 pub enum SortField {
     Name,
     Version,

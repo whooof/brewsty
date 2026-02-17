@@ -88,8 +88,8 @@ mod tests {
 
     #[test]
     fn package_list_item_with_version() {
-        let item = PackageListItem::new("curl".into(), PackageType::Formula)
-            .with_version("8.4.0".into());
+        let item =
+            PackageListItem::new("curl".into(), PackageType::Formula).with_version("8.4.0".into());
         assert_eq!(item.name, "curl");
         assert_eq!(item.version.as_deref(), Some("8.4.0"));
     }
@@ -98,8 +98,7 @@ mod tests {
     fn serialize_deserialize() {
         let mut list = PackageList::new().with_export_date("2024-01-01".into());
         list.add_formula(
-            PackageListItem::new("wget".into(), PackageType::Formula)
-                .with_version("1.0".into()),
+            PackageListItem::new("wget".into(), PackageType::Formula).with_version("1.0".into()),
         );
         let json = serde_json::to_string(&list).unwrap();
         let deserialized: PackageList = serde_json::from_str(&json).unwrap();

@@ -22,10 +22,14 @@ impl RepositoryUseCase {
 macro_rules! package_use_case {
     // No-arg use case: fn execute(&self) -> Result<R>
     ($name:ident, $method:ident -> $ret:ty) => {
-        pub struct $name { use_case: RepositoryUseCase }
+        pub struct $name {
+            use_case: RepositoryUseCase,
+        }
         impl $name {
             pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-                Self { use_case: RepositoryUseCase::new(repository) }
+                Self {
+                    use_case: RepositoryUseCase::new(repository),
+                }
             }
             pub async fn execute(&self) -> Result<$ret> {
                 self.use_case.repository().$method().await
@@ -35,10 +39,14 @@ macro_rules! package_use_case {
     // PackageType arg: fn execute(&self, pt: PackageType) -> Result<R>
     // Must come before generic ($arg:ty) arm since PackageType matches $arg:ty
     ($name:ident, $method:ident(PackageType) -> $ret:ty) => {
-        pub struct $name { use_case: RepositoryUseCase }
+        pub struct $name {
+            use_case: RepositoryUseCase,
+        }
         impl $name {
             pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-                Self { use_case: RepositoryUseCase::new(repository) }
+                Self {
+                    use_case: RepositoryUseCase::new(repository),
+                }
             }
             pub async fn execute(&self, package_type: PackageType) -> Result<$ret> {
                 self.use_case.repository().$method(package_type).await
@@ -47,10 +55,14 @@ macro_rules! package_use_case {
     };
     // Single owned-arg use case (passed as ref): fn execute(&self, arg: T) -> Result<R>
     ($name:ident, $method:ident($arg:ty) -> $ret:ty) => {
-        pub struct $name { use_case: RepositoryUseCase }
+        pub struct $name {
+            use_case: RepositoryUseCase,
+        }
         impl $name {
             pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-                Self { use_case: RepositoryUseCase::new(repository) }
+                Self {
+                    use_case: RepositoryUseCase::new(repository),
+                }
             }
             pub async fn execute(&self, arg: $arg) -> Result<$ret> {
                 self.use_case.repository().$method(&arg).await
@@ -59,10 +71,14 @@ macro_rules! package_use_case {
     };
     // Single ref-arg use case: fn execute(&self, arg: &T) -> Result<R>
     ($name:ident, $method:ident(ref $arg:ty) -> $ret:ty) => {
-        pub struct $name { use_case: RepositoryUseCase }
+        pub struct $name {
+            use_case: RepositoryUseCase,
+        }
         impl $name {
             pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-                Self { use_case: RepositoryUseCase::new(repository) }
+                Self {
+                    use_case: RepositoryUseCase::new(repository),
+                }
             }
             pub async fn execute(&self, arg: &$arg) -> Result<$ret> {
                 self.use_case.repository().$method(arg).await
@@ -86,7 +102,9 @@ pub struct CleanCache {
 
 impl CleanCache {
     pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-        Self { use_case: RepositoryUseCase::new(repository) }
+        Self {
+            use_case: RepositoryUseCase::new(repository),
+        }
     }
 
     pub async fn preview(&self) -> Result<CleanupPreview> {
@@ -104,11 +122,16 @@ pub struct CleanupOldVersions {
 
 impl CleanupOldVersions {
     pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-        Self { use_case: RepositoryUseCase::new(repository) }
+        Self {
+            use_case: RepositoryUseCase::new(repository),
+        }
     }
 
     pub async fn preview(&self) -> Result<CleanupPreview> {
-        self.use_case.repository().get_cleanup_old_versions_preview().await
+        self.use_case
+            .repository()
+            .get_cleanup_old_versions_preview()
+            .await
     }
 
     pub async fn execute(&self) -> Result<()> {
@@ -122,11 +145,16 @@ pub struct SearchPackages {
 
 impl SearchPackages {
     pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-        Self { use_case: RepositoryUseCase::new(repository) }
+        Self {
+            use_case: RepositoryUseCase::new(repository),
+        }
     }
 
     pub async fn execute(&self, query: &str, package_type: PackageType) -> Result<Vec<Package>> {
-        self.use_case.repository().search_packages(query, package_type).await
+        self.use_case
+            .repository()
+            .search_packages(query, package_type)
+            .await
     }
 }
 
@@ -136,10 +164,15 @@ pub struct GetPackageInfo {
 
 impl GetPackageInfo {
     pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
-        Self { use_case: RepositoryUseCase::new(repository) }
+        Self {
+            use_case: RepositoryUseCase::new(repository),
+        }
     }
 
     pub async fn execute(&self, name: &str, package_type: PackageType) -> Result<Package> {
-        self.use_case.repository().get_package_info(name, package_type).await
+        self.use_case
+            .repository()
+            .get_package_info(name, package_type)
+            .await
     }
 }

@@ -76,9 +76,10 @@ impl CleanupModal {
 
                     ui.horizontal(|ui| {
                         if ui.button("Confirm").clicked()
-                            && let Some(cleanup_type) = &self.cleanup_type {
-                                action = Some(CleanupAction::Confirm(*cleanup_type));
-                            }
+                            && let Some(cleanup_type) = &self.cleanup_type
+                        {
+                            action = Some(CleanupAction::Confirm(*cleanup_type));
+                        }
 
                         if ui.button("Cancel").clicked() {
                             action = Some(CleanupAction::Cancel);

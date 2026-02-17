@@ -82,12 +82,9 @@ impl BrewPackageRepository {
                 if let Some(name) = item.get("name").and_then(|v| v.as_str()) {
                     let is_pinned = pinned_packages.contains(&name.to_string());
 
-                    if let Some(package) = Self::extract_package_item(
-                        item,
-                        package_type,
-                        version_key,
-                        is_pinned,
-                    ) {
+                    if let Some(package) =
+                        Self::extract_package_item(item, package_type, version_key, is_pinned)
+                    {
                         packages.push(package);
                     }
                 }
@@ -134,7 +131,12 @@ impl BrewPackageRepository {
             }
         }
 
-        tracing::debug!("Processing {} lines, parsed {} packages for {:?}", line_count, packages.len(), package_type);
+        tracing::debug!(
+            "Processing {} lines, parsed {} packages for {:?}",
+            line_count,
+            packages.len(),
+            package_type
+        );
         Ok(packages)
     }
 
@@ -285,7 +287,8 @@ impl PackageRepository for BrewPackageRepository {
         let package_type = package.package_type;
 
         let output =
-            tokio::task::spawn_blocking(move || BrewCommand::upgrade_package(&name, package_type)).await??;
+            tokio::task::spawn_blocking(move || BrewCommand::upgrade_package(&name, package_type))
+                .await??;
 
         Self::log_brew_output(&output).await;
 
@@ -532,9 +535,7 @@ mod tests {
                 }
             ]
         }"#;
-        let result = repo()
-            .parse_outdated_json(json, PackageType::Cask)
-            .unwrap();
+        let result = repo().parse_outdated_json(json, PackageType::Cask).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].name, "firefox");
         assert_eq!(result[0].package_type, PackageType::Cask);
@@ -570,13 +571,16 @@ mod tests {
 
     #[test]
     fn extract_package_item_formula() {
-        let json: Value = serde_json::from_str(
-            r#"{"name": "wget", "installed": [{"version": "1.21.4"}]}"#,
+        let json: Value =
+            serde_json::from_str(r#"{"name": "wget", "installed": [{"version": "1.21.4"}]}"#)
+                .unwrap();
+        let pkg = BrewPackageRepository::extract_package_item(
+            &json,
+            PackageType::Formula,
+            "installed",
+            false,
         )
         .unwrap();
-        let pkg =
-            BrewPackageRepository::extract_package_item(&json, PackageType::Formula, "installed", false)
-                .unwrap();
         assert_eq!(pkg.name, "wget");
         assert_eq!(pkg.version.as_deref(), Some("1.21.4"));
         assert!(pkg.installed);
@@ -589,9 +593,13 @@ mod tests {
             r#"{"name": "curl", "installed": [{"version": "8.3.0"}], "current_version": "8.4.0"}"#,
         )
         .unwrap();
-        let pkg =
-            BrewPackageRepository::extract_package_item(&json, PackageType::Formula, "installed", true)
-                .unwrap();
+        let pkg = BrewPackageRepository::extract_package_item(
+            &json,
+            PackageType::Formula,
+            "installed",
+            true,
+        )
+        .unwrap();
         assert_eq!(pkg.name, "curl");
         assert!(pkg.outdated);
         assert!(pkg.pinned);

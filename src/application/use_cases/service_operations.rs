@@ -1,13 +1,12 @@
-use crate::domain::{
-    entities::Service,
-    repositories::ServiceRepository,
-};
+use crate::domain::{entities::Service, repositories::ServiceRepository};
 use anyhow::Result;
 use std::sync::Arc;
 
 macro_rules! service_use_case {
     ($name:ident, $method:ident -> $ret:ty) => {
-        pub struct $name { repository: Arc<dyn ServiceRepository> }
+        pub struct $name {
+            repository: Arc<dyn ServiceRepository>,
+        }
         impl $name {
             pub fn new(repository: Arc<dyn ServiceRepository>) -> Self {
                 Self { repository }
@@ -18,7 +17,9 @@ macro_rules! service_use_case {
         }
     };
     ($name:ident, $method:ident(&str) -> $ret:ty) => {
-        pub struct $name { repository: Arc<dyn ServiceRepository> }
+        pub struct $name {
+            repository: Arc<dyn ServiceRepository>,
+        }
         impl $name {
             pub fn new(repository: Arc<dyn ServiceRepository>) -> Self {
                 Self { repository }

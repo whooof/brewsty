@@ -1,4 +1,7 @@
-use crate::domain::{entities::{Service, ServiceStatus}, repositories::ServiceRepository};
+use crate::domain::{
+    entities::{Service, ServiceStatus},
+    repositories::ServiceRepository,
+};
 use crate::infrastructure::brew::command::BrewCommand;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -67,7 +70,8 @@ impl ServiceRepository for BrewServiceRepository {
 
     async fn start_service(&self, name: &str) -> Result<()> {
         let name = name.to_string();
-        let output = tokio::task::spawn_blocking(move || BrewCommand::start_service(&name)).await??;
+        let output =
+            tokio::task::spawn_blocking(move || BrewCommand::start_service(&name)).await??;
 
         if !output.stdout.is_empty() {
             tracing::info!("start_service output: {}", output.stdout);
@@ -81,7 +85,8 @@ impl ServiceRepository for BrewServiceRepository {
 
     async fn stop_service(&self, name: &str) -> Result<()> {
         let name = name.to_string();
-        let output = tokio::task::spawn_blocking(move || BrewCommand::stop_service(&name)).await??;
+        let output =
+            tokio::task::spawn_blocking(move || BrewCommand::stop_service(&name)).await??;
 
         if !output.stdout.is_empty() {
             tracing::info!("stop_service output: {}", output.stdout);
@@ -95,7 +100,8 @@ impl ServiceRepository for BrewServiceRepository {
 
     async fn restart_service(&self, name: &str) -> Result<()> {
         let name = name.to_string();
-        let output = tokio::task::spawn_blocking(move || BrewCommand::restart_service(&name)).await??;
+        let output =
+            tokio::task::spawn_blocking(move || BrewCommand::restart_service(&name)).await??;
 
         if !output.stdout.is_empty() {
             tracing::info!("restart_service output: {}", output.stdout);

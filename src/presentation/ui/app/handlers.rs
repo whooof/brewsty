@@ -351,7 +351,10 @@ impl BrewstyApp {
         self.packages_in_operation.insert(package_name.clone());
         self.status_message = format!("Installing {}...", package.name);
 
-        let initial_msg = format!("Installing package: {} ({:?})", package_name, package.package_type);
+        let initial_msg = format!(
+            "Installing package: {} ({:?})",
+            package_name, package.package_type
+        );
         self.log_manager.push(initial_msg.clone());
         tracing::info!("{}", initial_msg);
 
@@ -520,7 +523,10 @@ impl BrewstyApp {
         self.packages_in_operation.insert(package_name.clone());
         self.status_message = format!("Updating {}...", package.name);
 
-        let initial_msg = format!("Updating package: {} ({:?})", package_name, package.package_type);
+        let initial_msg = format!(
+            "Updating package: {} ({:?})",
+            package_name, package.package_type
+        );
         self.log_manager.push(initial_msg.clone());
         tracing::info!("{}", initial_msg);
 
@@ -548,7 +554,10 @@ impl BrewstyApp {
         self.status_message = format!("Pinning {}...", package.name);
 
         let package_name = package.name.clone();
-        let initial_msg = format!("Pinning package: {} ({:?})", package_name, package.package_type);
+        let initial_msg = format!(
+            "Pinning package: {} ({:?})",
+            package_name, package.package_type
+        );
         self.log_manager.push(initial_msg.clone());
         tracing::info!("{}", initial_msg);
 
@@ -577,7 +586,10 @@ impl BrewstyApp {
         self.status_message = format!("Unpinning {}...", package.name);
 
         let package_name = package.name.clone();
-        let initial_msg = format!("Unpinning package: {} ({:?})", package_name, package.package_type);
+        let initial_msg = format!(
+            "Unpinning package: {} ({:?})",
+            package_name, package.package_type
+        );
         self.log_manager.push(initial_msg.clone());
         tracing::info!("{}", initial_msg);
 
@@ -665,8 +677,12 @@ impl BrewstyApp {
 
         self.executor.spawn(async move {
             match use_case.execute(&name).await {
-                Ok(_) => shared.set_success(format!("Successfully started service {}", service_name)),
-                Err(e) => shared.set_failure(format!("Error starting service {}: {}", service_name, e)),
+                Ok(_) => {
+                    shared.set_success(format!("Successfully started service {}", service_name))
+                }
+                Err(e) => {
+                    shared.set_failure(format!("Error starting service {}: {}", service_name, e))
+                }
             }
         });
     }
@@ -693,8 +709,12 @@ impl BrewstyApp {
 
         self.executor.spawn(async move {
             match use_case.execute(&name).await {
-                Ok(_) => shared.set_success(format!("Successfully stopped service {}", service_name)),
-                Err(e) => shared.set_failure(format!("Error stopping service {}: {}", service_name, e)),
+                Ok(_) => {
+                    shared.set_success(format!("Successfully stopped service {}", service_name))
+                }
+                Err(e) => {
+                    shared.set_failure(format!("Error stopping service {}: {}", service_name, e))
+                }
             }
         });
     }
@@ -722,8 +742,12 @@ impl BrewstyApp {
 
         self.executor.spawn(async move {
             match use_case.execute(&name).await {
-                Ok(_) => shared.set_success(format!("Successfully restarted service {}", service_name)),
-                Err(e) => shared.set_failure(format!("Error restarting service {}: {}", service_name, e)),
+                Ok(_) => {
+                    shared.set_success(format!("Successfully restarted service {}", service_name))
+                }
+                Err(e) => {
+                    shared.set_failure(format!("Error restarting service {}: {}", service_name, e))
+                }
             }
         });
     }
@@ -851,19 +875,28 @@ impl BrewstyApp {
         let preview = Arc::new(Mutex::new(None));
         let error = Arc::new(Mutex::new(None));
 
-        self.task_manager.set_active_task(AsyncTask::CleanupPreview {
-            cleanup_type,
-            preview: Arc::clone(&preview),
-            error: Arc::clone(&error),
-        });
+        self.task_manager
+            .set_active_task(AsyncTask::CleanupPreview {
+                cleanup_type,
+                preview: Arc::clone(&preview),
+                error: Arc::clone(&error),
+            });
 
         match cleanup_type {
             CleanupType::Cache => {
                 let use_case = Arc::clone(&self.use_cases.clean_cache);
                 self.executor.spawn(async move {
                     match use_case.preview().await {
-                        Ok(p) => { if let Ok(mut prev) = preview.lock() { *prev = Some(p); } }
-                        Err(e) => { if let Ok(mut err) = error.lock() { *err = Some(format!("Error: {}", e)); } }
+                        Ok(p) => {
+                            if let Ok(mut prev) = preview.lock() {
+                                *prev = Some(p);
+                            }
+                        }
+                        Err(e) => {
+                            if let Ok(mut err) = error.lock() {
+                                *err = Some(format!("Error: {}", e));
+                            }
+                        }
                     }
                 });
             }
@@ -871,8 +904,16 @@ impl BrewstyApp {
                 let use_case = Arc::clone(&self.use_cases.cleanup_old_versions);
                 self.executor.spawn(async move {
                     match use_case.preview().await {
-                        Ok(p) => { if let Ok(mut prev) = preview.lock() { *prev = Some(p); } }
-                        Err(e) => { if let Ok(mut err) = error.lock() { *err = Some(format!("Error: {}", e)); } }
+                        Ok(p) => {
+                            if let Ok(mut prev) = preview.lock() {
+                                *prev = Some(p);
+                            }
+                        }
+                        Err(e) => {
+                            if let Ok(mut err) = error.lock() {
+                                *err = Some(format!("Error: {}", e));
+                            }
+                        }
                     }
                 });
             }
@@ -955,7 +996,9 @@ impl BrewstyApp {
         self.executor.spawn(async move {
             match tokio::task::spawn_blocking(|| {
                 crate::infrastructure::brew::command::BrewCommand::doctor()
-            }).await {
+            })
+            .await
+            {
                 Ok(Ok(output)) => {
                     if let Ok(mut r) = result.lock() {
                         *r = Some(output);
@@ -990,21 +1033,32 @@ impl BrewstyApp {
         self.executor.spawn(async move {
             match tokio::task::spawn_blocking(|| {
                 crate::infrastructure::brew::command::BrewCommand::list_taps()
-            }).await {
+            })
+            .await
+            {
                 Ok(Ok(output)) => {
-                    let tap_list: Vec<String> = output.lines()
+                    let tap_list: Vec<String> = output
+                        .lines()
                         .filter(|l| !l.is_empty())
                         .map(|l| l.trim().to_string())
                         .collect();
                     let msg = format!("Loaded {} taps", tap_list.len());
-                    if let Ok(mut t) = taps.lock() { *t = tap_list; }
-                    if let Ok(mut l) = logs.lock() { l.push(msg); }
+                    if let Ok(mut t) = taps.lock() {
+                        *t = tap_list;
+                    }
+                    if let Ok(mut l) = logs.lock() {
+                        l.push(msg);
+                    }
                 }
                 Ok(Err(e)) => {
-                    if let Ok(mut l) = logs.lock() { l.push(format!("Error loading taps: {}", e)); }
+                    if let Ok(mut l) = logs.lock() {
+                        l.push(format!("Error loading taps: {}", e));
+                    }
                 }
                 Err(e) => {
-                    if let Ok(mut l) = logs.lock() { l.push(format!("Task error: {}", e)); }
+                    if let Ok(mut l) = logs.lock() {
+                        l.push(format!("Task error: {}", e));
+                    }
                 }
             }
         });
@@ -1026,7 +1080,9 @@ impl BrewstyApp {
         self.executor.spawn(async move {
             match tokio::task::spawn_blocking(move || {
                 crate::infrastructure::brew::command::BrewCommand::tap(&tap_name)
-            }).await {
+            })
+            .await
+            {
                 Ok(Ok(_)) => shared.set_success(format!("Successfully tapped {}", name)),
                 Ok(Err(e)) => shared.set_failure(format!("Error tapping {}: {}", name, e)),
                 Err(e) => shared.set_failure(format!("Task error: {}", e)),
@@ -1050,7 +1106,9 @@ impl BrewstyApp {
         self.executor.spawn(async move {
             match tokio::task::spawn_blocking(move || {
                 crate::infrastructure::brew::command::BrewCommand::untap(&tap_name)
-            }).await {
+            })
+            .await
+            {
                 Ok(Ok(_)) => shared.set_success(format!("Successfully untapped {}", name)),
                 Ok(Err(e)) => shared.set_failure(format!("Error untapping {}: {}", name, e)),
                 Err(e) => shared.set_failure(format!("Task error: {}", e)),
@@ -1141,7 +1199,11 @@ impl BrewstyApp {
         }
     }
 
-    pub(super) fn load_package_info_immediate(&mut self, package_name: String, package_type: PackageType) {
+    pub(super) fn load_package_info_immediate(
+        &mut self,
+        package_name: String,
+        package_type: PackageType,
+    ) {
         if self.task_manager.is_loading_package_info(&package_name) {
             tracing::debug!("Already loading info for {}, skipping", package_name);
             return;
