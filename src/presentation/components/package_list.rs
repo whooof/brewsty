@@ -1,5 +1,6 @@
 use crate::domain::entities::{Package, PackageType};
-use egui::{Color32, RichText, ScrollArea};
+use egui::{Color32, RichText};
+use egui_extras::{Column, TableBuilder};
 
 pub struct PackageList {
     packages: Vec<Package>,
@@ -50,44 +51,66 @@ impl PackageList {
         on_unpin: &mut Option<Package>,
     ) {
         let search_lower = search_query.to_lowercase();
+        let text_height = egui::TextStyle::Body
+            .resolve(ui.style())
+            .size
+            .max(ui.spacing().interact_size.y);
 
-        ScrollArea::vertical()
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                egui::Grid::new("package_grid")
-                    .striped(true)
-                    .spacing([10.0, 8.0])
-                    .min_col_width(ui.available_width() / 5.0)
-                    .show(ui, |ui| {
-                        ui.heading("Name");
-                        ui.heading("Version");
-                        ui.heading("Type");
-                        ui.heading("Status");
-                        ui.heading("Actions");
-                        ui.end_row();
+        TableBuilder::new(ui)
+            .striped(true)
+            .resizable(true)
+            .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+            .column(Column::auto().at_least(150.0).resizable(true)) // Name
+            .column(Column::initial(150.0).resizable(true)) // Version
+            .column(Column::initial(80.0).resizable(true)) // Type
+            .column(Column::initial(100.0).resizable(true)) // Status
+            .column(Column::remainder().at_least(150.0)) // Actions
+            .header(20.0, |mut header| {
+                header.col(|ui| {
+                    ui.strong("Name");
+                });
+                header.col(|ui| {
+                    ui.strong("Version");
+                });
+                header.col(|ui| {
+                    ui.strong("Type");
+                });
+                header.col(|ui| {
+                    ui.strong("Status");
+                });
+                header.col(|ui| {
+                    ui.strong("Actions");
+                });
+            })
+            .body(|mut body| {
+                for package in &self.packages {
+                    let should_show = match package.package_type {
+                        PackageType::Formula => show_formulae,
+                        PackageType::Cask => show_casks,
+                    };
 
-                        for package in &self.packages {
-                            let should_show = match package.package_type {
-                                PackageType::Formula => show_formulae,
-                                PackageType::Cask => show_casks,
-                            };
+                    if !should_show {
+                        continue;
+                    }
 
-                            if !should_show {
-                                continue;
-                            }
+                    if !search_query.is_empty()
+                        && !package.name.to_lowercase().contains(&search_lower)
+                    {
+                        continue;
+                    }
 
-                            if !search_query.is_empty()
-                                && !package.name.to_lowercase().contains(&search_lower)
-                            {
-                                continue;
-                            }
+                    let row_height = text_height + 8.0;
 
+                    body.row(row_height, |mut row| {
+                        row.col(|ui| {
                             let is_selected = self.selected_package.as_ref() == Some(&package.name);
 
                             if ui.selectable_label(is_selected, &package.name).clicked() {
                                 self.selected_package = Some(package.name.clone());
                             }
+                        });
 
+                        row.col(|ui| {
                             let version_text = if package.version_load_failed {
                                 "Failed".to_string()
                             } else if package.outdated {
@@ -118,16 +141,24 @@ impl PackageList {
                             } else {
                                 ui.label(version_text);
                             }
+                        });
 
-                            ui.label(package.package_type.to_string());
+                        row.col(|ui| {
+                            let type_str = match package.package_type {
+                                PackageType::Formula => "📦 Formula",
+                                PackageType::Cask => "🖥️ Cask",
+                            };
+                            ui.label(type_str);
+                        });
 
+                        row.col(|ui| {
                             let is_operating = packages_loading_info.contains(&package.name);
                             let status_text = if package.pinned {
-                                RichText::new("Pinned").color(Color32::from_rgb(255, 200, 0))
+                                RichText::new("📌 Pinned").color(Color32::from_rgb(255, 200, 0))
                             } else if package.outdated {
-                                RichText::new("Outdated").color(Color32::from_rgb(255, 165, 0))
+                                RichText::new("⚠️ Outdated").color(Color32::from_rgb(255, 165, 0))
                             } else if package.installed {
-                                RichText::new("Installed").color(Color32::from_rgb(0, 255, 0))
+                                RichText::new("✅ Installed").color(Color32::from_rgb(0, 255, 0))
                             } else {
                                 RichText::new("Available").color(Color32::GRAY)
                             };
@@ -137,29 +168,31 @@ impl PackageList {
                             } else {
                                 ui.label(status_text);
                             }
+                        });
 
+                        row.col(|ui| {
                             ui.horizontal(|ui| {
                                 if package.installed {
-                                    if ui.button("Uninstall").clicked() {
+                                    if ui.button("🗑️").on_hover_text("Uninstall").clicked() {
                                         *on_uninstall = Some(package.clone());
                                     }
                                     if package.outdated
                                         && !package.pinned
-                                        && ui.button("Update").clicked()
+                                        && ui.button("🔄").on_hover_text("Update").clicked()
                                     {
                                         *on_update = Some(package.clone());
                                     }
-                                    // Only show pin/unpin for formulae (casks don't support pinning in Homebrew)
+                                    // Only show pin/unpin for formulae
                                     if matches!(package.package_type, PackageType::Formula) {
                                         if package.pinned {
-                                            if ui.button("Unpin").clicked() {
+                                            if ui.button("🔓").on_hover_text("Unpin").clicked() {
                                                 *on_unpin = Some(package.clone());
                                             }
-                                        } else if ui.button("Pin").clicked() {
+                                        } else if ui.button("📌").on_hover_text("Pin").clicked() {
                                             *on_pin = Some(package.clone());
                                         }
                                     }
-                                } else if ui.button("Install").clicked() {
+                                } else if ui.button("⬇️").on_hover_text("Install").clicked() {
                                     *on_install = Some(package.clone());
                                 }
 
@@ -167,19 +200,18 @@ impl PackageList {
                                     && !package.version_load_failed
                                     && !packages_loading_info.contains(&package.name)
                                 {
-                                    if ui.button("Load Info").clicked() {
+                                    if ui.button("⏳").on_hover_text("Load Info").clicked() {
                                         *on_load_info = Some(package.clone());
                                     }
                                 } else if package.description.is_some()
-                                    && ui.button("Info").clicked()
+                                    && ui.button("ℹ️").on_hover_text("Info").clicked()
                                 {
                                     self.show_info_action = Some(package.clone());
                                 }
                             });
-
-                            ui.end_row();
-                        }
+                        });
                     });
+                }
             });
     }
 }
