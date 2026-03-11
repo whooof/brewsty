@@ -23,5 +23,11 @@ Cargo.lock
 # Local development
 CLAUDE.md
 
+# Root scratch binaries
+/test_doctor
+/test_du
+/test_du2
+/test_parse_bundle
+
 # Session documentation
 .sessions/

@@ -38,6 +38,6 @@ You should find replacements for the following formulae:
     if in_warning {
         warnings.push((current_title, current_body.trim().to_string()));
     }
-    
+
     println!("{:#?}", warnings);
 }

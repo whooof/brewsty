@@ -22,7 +22,7 @@ Run `brew bundle cleanup --force` to make these changes.";
             }
         }
     }
-    
+
     let mut extra = Vec::new();
     let mut in_extra = false;
     for line in cleanup_output.lines() {
@@ -31,8 +31,10 @@ Run `brew bundle cleanup --force` to make these changes.";
             continue;
         }
         if in_extra {
-            if line.is_empty() || line.starts_with("Run `brew bundle") || line.starts_with("Would uninstall") {
-                // Wait, it could say "Would uninstall casks:" later.
+            if line.is_empty()
+                || line.starts_with("Run `brew bundle")
+                || line.starts_with("Would uninstall")
+            {
                 if line.starts_with("Would uninstall") {
                     continue;
                 }
@@ -44,7 +46,7 @@ Run `brew bundle cleanup --force` to make these changes.";
             extra.push(line.trim().to_string());
         }
     }
-    
+
     println!("Missing: {:#?}", missing);
     println!("Extra: {:#?}", extra);
 }
