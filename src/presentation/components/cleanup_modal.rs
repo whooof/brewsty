@@ -4,6 +4,7 @@ use crate::domain::entities::CleanupPreview;
 pub enum CleanupType {
     Cache,
     OldVersions,
+    Orphans,
 }
 
 pub enum CleanupAction {

@@ -1,0 +1,12 @@
+[build]
+jobs = 10
+target-dir = "/Volumes/MacOS - Ext/Dev/brewsty-target"
+
+[env]
+MACOSX_DEPLOYMENT_TARGET = "15.0"
+SDKROOT = "/Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk"
+CFLAGS = "-isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk"
+CPPFLAGS = "-isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk"
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-Wl,-dead_strip"]

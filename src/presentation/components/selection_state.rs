@@ -5,19 +5,10 @@ pub struct SelectionState {
     selected_packages: HashSet<String>,
 }
 
-#[allow(dead_code)]
 impl SelectionState {
     pub fn new() -> Self {
         Self {
             selected_packages: HashSet::new(),
-        }
-    }
-
-    pub fn toggle(&mut self, package_name: String) {
-        if self.selected_packages.contains(&package_name) {
-            self.selected_packages.remove(&package_name);
-        } else {
-            self.selected_packages.insert(package_name);
         }
     }
 
@@ -43,14 +34,6 @@ impl SelectionState {
 
     pub fn clear(&mut self) {
         self.selected_packages.clear();
-    }
-
-    pub fn select_all(&mut self, package_names: Vec<String>) {
-        self.selected_packages = package_names.into_iter().collect();
-    }
-
-    pub fn count(&self) -> usize {
-        self.selected_packages.len()
     }
 }
 

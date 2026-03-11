@@ -40,8 +40,8 @@ pub fn configure_style(ctx: &Context, theme: ThemeMode) {
     .into();
 
     style.spacing.item_spacing = egui::vec2(10.0, 10.0);
-    style.spacing.window_margin = egui::Margin::same(12);
-    style.spacing.button_padding = egui::vec2(12.0, 8.0);
+    style.spacing.window_margin = egui::Margin::same(14);
+    style.spacing.button_padding = egui::vec2(14.0, 9.0);
     style.spacing.indent = 24.0;
     style.spacing.interact_size = egui::vec2(60.0, 30.0);
 
@@ -68,22 +68,32 @@ pub fn configure_style(ctx: &Context, theme: ThemeMode) {
     visuals.menu_corner_radius = corner_8;
 
     if visuals.dark_mode {
-        visuals.widgets.noninteractive.bg_fill = Color32::from_gray(32);
-        visuals.window_fill = Color32::from_gray(20);
-        visuals.panel_fill = Color32::from_gray(28);
-        visuals.widgets.inactive.weak_bg_fill = Color32::from_gray(45);
-        visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_gray(60));
-        visuals.widgets.hovered.weak_bg_fill = Color32::from_gray(60);
-        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_gray(100));
-        visuals.selection.bg_fill = Color32::from_rgb(0, 122, 255);
-        visuals.hyperlink_color = Color32::from_rgb(58, 150, 255);
+        visuals.widgets.noninteractive.bg_fill = Color32::from_rgb(26, 30, 34);
+        visuals.window_fill = Color32::from_rgb(16, 19, 22);
+        visuals.panel_fill = Color32::from_rgb(22, 26, 30);
+        visuals.faint_bg_color = Color32::from_rgb(28, 34, 40);
+        visuals.widgets.inactive.weak_bg_fill = Color32::from_rgb(38, 45, 52);
+        visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_rgb(67, 79, 90));
+        visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(53, 66, 77);
+        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(115, 148, 171));
+        visuals.widgets.active.weak_bg_fill = Color32::from_rgb(60, 77, 90);
+        visuals.widgets.active.bg_fill = Color32::from_rgb(28, 109, 144);
+        visuals.widgets.active.bg_stroke = Stroke::new(1.0, Color32::from_rgb(129, 196, 226));
+        visuals.selection.bg_fill = Color32::from_rgb(34, 151, 203);
+        visuals.hyperlink_color = Color32::from_rgb(102, 196, 235);
     } else {
-        visuals.widgets.noninteractive.bg_fill = Color32::from_gray(248);
+        visuals.widgets.noninteractive.bg_fill = Color32::from_rgb(246, 245, 239);
         visuals.window_fill = Color32::WHITE;
-        visuals.panel_fill = Color32::from_gray(242);
-        visuals.widgets.inactive.weak_bg_fill = Color32::from_gray(230);
-        visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_gray(200));
-        visuals.selection.bg_fill = Color32::from_rgb(0, 122, 255);
+        visuals.panel_fill = Color32::from_rgb(239, 236, 227);
+        visuals.faint_bg_color = Color32::from_rgb(243, 240, 233);
+        visuals.widgets.inactive.weak_bg_fill = Color32::from_rgb(231, 227, 217);
+        visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_rgb(194, 187, 171));
+        visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(220, 231, 234);
+        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(96, 149, 173));
+        visuals.widgets.active.weak_bg_fill = Color32::from_rgb(197, 224, 231);
+        visuals.widgets.active.bg_fill = Color32::from_rgb(57, 139, 173);
+        visuals.widgets.active.bg_stroke = Stroke::new(1.0, Color32::from_rgb(34, 96, 121));
+        visuals.selection.bg_fill = Color32::from_rgb(57, 139, 173);
     }
 
     ctx.set_style(style);

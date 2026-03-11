@@ -1,3 +1,4 @@
+pub mod brewfile_modal;
 pub mod cleanup_modal;
 pub mod filter_state;
 pub mod info_modal;
@@ -8,7 +9,9 @@ pub mod password_modal;
 pub mod selection_state;
 pub mod service_list;
 pub mod tab_manager;
+pub mod toast;
 
+pub use brewfile_modal::*;
 pub use cleanup_modal::{CleanupAction, CleanupModal, CleanupType};
 pub use filter_state::{FilterState, SortField, SortOrder};
 pub use info_modal::{InfoModal, InfoModalAction};
@@ -19,3 +22,4 @@ pub use password_modal::PasswordModal;
 pub use selection_state::SelectionState;
 pub use service_list::ServiceList;
 pub use tab_manager::{Tab, TabManager};
+pub use toast::ToastManager;

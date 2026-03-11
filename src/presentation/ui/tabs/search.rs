@@ -5,6 +5,7 @@ use std::collections::HashSet;
 
 pub enum SearchAction {
     Search,
+    QueryChanged,
     Install(Package),
     Uninstall(Package),
     Update(Package),
@@ -31,6 +32,9 @@ impl SearchTab {
         ui.horizontal(|ui| {
             ui.label("Search:");
             let response = ui.text_edit_singleline(filter_state.search_query_mut());
+            if response.changed() {
+                actions.push(SearchAction::QueryChanged);
+            }
             if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 actions.push(SearchAction::Search);
             }

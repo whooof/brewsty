@@ -235,16 +235,24 @@ impl PackageRepository for BrewPackageRepository {
     async fn get_installed_packages(&self, package_type: PackageType) -> Result<Vec<Package>> {
         tracing::info!("get_installed_packages called for {:?}", package_type);
         let package_type_clone = package_type;
-        let output =
-            tokio::task::spawn_blocking(move || BrewCommand::list_packages(package_type_clone))
-                .await??;
-        tracing::info!("Got output for {:?}: {} bytes", package_type, output.len());
-        let result = self.parse_installed_packages(&output, package_type);
-        tracing::info!(
-            "parse_installed_packages returned: {:?}",
-            result.as_ref().map(|p| p.len()).map_err(|e| e.to_string())
+
+        let (output, sizes) = tokio::join!(
+            tokio::task::spawn_blocking(move || BrewCommand::list_packages(package_type_clone)),
+            tokio::task::spawn_blocking(|| BrewCommand::get_installed_sizes())
         );
-        result
+
+        let output = output??;
+        let sizes = sizes?.unwrap_or_default();
+
+        tracing::info!("Got output for {:?}: {} bytes", package_type, output.len());
+        let mut packages = self.parse_installed_packages(&output, package_type)?;
+
+        for pkg in &mut packages {
+            if let Some(&size) = sizes.get(&pkg.name) {
+                pkg.installed_size = Some(size);
+            }
+        }
+        Ok(packages)
     }
 
     async fn get_outdated_packages(&self, package_type: PackageType) -> Result<Vec<Package>> {
@@ -319,6 +327,36 @@ impl PackageRepository for BrewPackageRepository {
 
         Self::log_brew_output(&output).await;
 
+        Ok(())
+    }
+
+    async fn get_cleanup_orphans_preview(&self) -> Result<CleanupPreview> {
+        let output = tokio::task::spawn_blocking(BrewCommand::autoremove_dry_run).await??;
+        // The output looks like:
+        // ==> Would autoremove 3 unneeded formulae:
+        // libimagequant
+        // libraqm
+        // pillow
+        let mut items = Vec::new();
+        for line in output.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("==>") {
+                continue;
+            }
+            items.push(CleanupItem {
+                path: trimmed.to_string(),
+                size: 0, // Size is not easily known just from name
+            });
+        }
+        Ok(CleanupPreview {
+            items,
+            total_size: 0,
+        })
+    }
+
+    async fn clean_orphans(&self) -> Result<()> {
+        let output = tokio::task::spawn_blocking(BrewCommand::autoremove).await??;
+        Self::log_brew_output(&output).await;
         Ok(())
     }
 

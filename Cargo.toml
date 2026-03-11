@@ -10,18 +10,21 @@ verbose-logging = []
 [dependencies]
 eframe = "0.33"
 egui = "0.33"
-tokio = { version = "1.49", features = ["full"] }
+tokio = { version = "1.50", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-anyhow = "1.0"
+serde_json = "1.0.149"
+anyhow = "1.0.102"
 thiserror = "2.0"
 async-trait = "0.1"
-chrono = "0.4"
+chrono = { version = "0.4.44", features = ["serde"] }
 dirs = "6.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 rfd = "0.17"
 egui_extras = "0.33"
+
+[dev-dependencies]
+tempfile = "3.27.0"
 
 [profile.release]
 opt-level = 3

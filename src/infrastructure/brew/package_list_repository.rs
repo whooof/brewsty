@@ -1,5 +1,5 @@
 use crate::domain::{
-    entities::{PackageList, PackageListItem, PackageType},
+    entities::{PackageList, PackageListItem, PackageType, brewfile::BrewfileSyncPreview},
     repositories::PackageListRepository,
 };
 use crate::infrastructure::brew::command::BrewCommand;
@@ -186,6 +186,41 @@ impl PackageListRepository for BrewPackageListRepository {
         }
 
         Ok(installed)
+    }
+
+    async fn bundle_dump(&self, path: &str) -> Result<String> {
+        let path_clone = path.to_string();
+        tokio::task::spawn_blocking(move || BrewCommand::bundle_dump(&path_clone)).await?
+    }
+
+    async fn bundle_check_preview(&self, path: &str) -> Result<BrewfileSyncPreview> {
+        let path_clone1 = path.to_string();
+        let path_clone2 = path.to_string();
+
+        let check_output =
+            tokio::task::spawn_blocking(move || BrewCommand::bundle_check(&path_clone1)).await??;
+        let cleanup_output =
+            tokio::task::spawn_blocking(move || BrewCommand::bundle_cleanup_dry_run(&path_clone2))
+                .await??;
+
+        Ok(BrewfileSyncPreview::parse_check_and_cleanup(
+            path,
+            &check_output,
+            &cleanup_output,
+        ))
+    }
+
+    async fn bundle_apply(&self, path: &str, install: bool, cleanup: bool) -> Result<()> {
+        let path_clone = path.to_string();
+        if install {
+            let p = path_clone.clone();
+            tokio::task::spawn_blocking(move || BrewCommand::bundle_install(&p)).await??;
+        }
+        if cleanup {
+            let p = path_clone.clone();
+            tokio::task::spawn_blocking(move || BrewCommand::bundle_cleanup_force(&p)).await??;
+        }
+        Ok(())
     }
 }
 

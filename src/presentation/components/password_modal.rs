@@ -9,7 +9,6 @@ pub struct PasswordModal {
     show_password: bool,
 }
 
-#[allow(dead_code)]
 impl PasswordModal {
     pub fn new() -> Self {
         Self {
@@ -29,10 +28,6 @@ impl PasswordModal {
         self.confirmed = false;
         self.cancelled = false;
         self.show_password = false;
-    }
-
-    pub fn is_open(&self) -> bool {
-        self.show
     }
 
     pub fn take_result(&mut self) -> Option<(bool, String)> {

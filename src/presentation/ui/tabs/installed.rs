@@ -58,8 +58,8 @@ impl InstalledTab {
                 };
                 match field {
                     SortField::Name => format!("Name{}", arrow),
-                    SortField::Version => format!("Version{}", arrow),
                     SortField::Type => format!("Type{}", arrow),
+                    SortField::Size => format!("Size{}", arrow),
                 }
             };
 
@@ -76,6 +76,12 @@ impl InstalledTab {
                 .clicked()
             {
                 filter_state.toggle_sort(SortField::Type);
+            }
+            if ui
+                .button(sort_label(SortField::Size, current_field, current_order))
+                .clicked()
+            {
+                filter_state.toggle_sort(SortField::Size);
             }
         });
 

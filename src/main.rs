@@ -4,10 +4,13 @@ mod infrastructure;
 mod presentation;
 
 use application::UseCaseContainer;
-use domain::repositories::{PackageListRepository, PackageRepository, ServiceRepository};
+use domain::repositories::{
+    HistoryRepository, PackageListRepository, PackageRepository, ServiceRepository,
+};
 use infrastructure::brew::{
     BrewPackageListRepository, BrewPackageRepository, BrewServiceRepository,
 };
+use infrastructure::history_repository::FileHistoryRepository;
 use presentation::services::log_capture;
 use presentation::ui::BrewstyApp;
 use std::sync::Arc;
@@ -25,11 +28,13 @@ fn main() -> eframe::Result<()> {
     let service_repository: Arc<dyn ServiceRepository> = Arc::new(BrewServiceRepository::new());
     let package_list_repository: Arc<dyn PackageListRepository> =
         Arc::new(BrewPackageListRepository::new());
+    let history_repository: Arc<dyn HistoryRepository> = Arc::new(FileHistoryRepository::new());
 
     let use_cases = Arc::new(UseCaseContainer::new(
         package_repository,
         service_repository,
         package_list_repository,
+        history_repository,
     ));
 
     let options = eframe::NativeOptions {

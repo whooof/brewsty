@@ -12,8 +12,10 @@ pub trait PackageRepository: Send + Sync {
     async fn update_all(&self) -> Result<()>;
     async fn get_cleanup_preview(&self) -> Result<CleanupPreview>;
     async fn get_cleanup_old_versions_preview(&self) -> Result<CleanupPreview>;
+    async fn get_cleanup_orphans_preview(&self) -> Result<CleanupPreview>;
     async fn clean_cache(&self) -> Result<()>;
     async fn cleanup_old_versions(&self) -> Result<()>;
+    async fn clean_orphans(&self) -> Result<()>;
     async fn search_packages(&self, query: &str, package_type: PackageType)
     -> Result<Vec<Package>>;
     async fn get_package_info(&self, name: &str, package_type: PackageType) -> Result<Package>;

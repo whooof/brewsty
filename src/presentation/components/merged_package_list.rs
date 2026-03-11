@@ -1,6 +1,6 @@
 use crate::domain::entities::{Package, PackageType};
-use crate::presentation::components::filter_state::{SortField, SortOrder};
 use crate::presentation::components::SelectionState;
+use crate::presentation::components::filter_state::{SortField, SortOrder};
 use egui::{Color32, RichText, ScrollArea};
 use egui_extras::{Column, TableBuilder};
 
@@ -12,7 +12,6 @@ pub struct MergedPackageList {
     outdated_selection: SelectionState,
 }
 
-#[allow(dead_code)]
 impl MergedPackageList {
     pub fn new() -> Self {
         Self {
@@ -67,10 +66,6 @@ impl MergedPackageList {
         }
     }
 
-    pub fn remove_from_outdated(&mut self, package_name: &str) {
-        self.outdated_packages.retain(|p| p.name != package_name);
-    }
-
     pub fn remove_from_outdated_selection_by_name(&mut self, package_name: &str) {
         self.outdated_selection.deselect(package_name);
     }
@@ -88,24 +83,8 @@ impl MergedPackageList {
         }
     }
 
-    pub fn add_installed_package(&mut self, package: Package) {
-        if !self.packages.iter().any(|p| p.name == package.name) {
-            self.packages.push(package);
-        } else if let Some(existing) = self.packages.iter_mut().find(|p| p.name == package.name) {
-            *existing = package;
-        }
-    }
-
     pub fn get_show_info_action(&mut self) -> Option<Package> {
         self.show_info_action.take()
-    }
-
-    pub fn get_outdated_selection(&self) -> SelectionState {
-        self.outdated_selection.clone()
-    }
-
-    pub fn set_outdated_selection(&mut self, selection: SelectionState) {
-        self.outdated_selection = selection;
     }
 
     pub fn clear_outdated_selection(&mut self) {
@@ -116,20 +95,12 @@ impl MergedPackageList {
         self.packages.len()
     }
 
-    pub fn outdated_count(&self) -> usize {
-        self.outdated_packages.len()
-    }
-
     pub fn apply_sort(&mut self, field: SortField, order: SortOrder) {
         let cmp = |a: &Package, b: &Package| -> std::cmp::Ordering {
             let result = match field {
                 SortField::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-                SortField::Version => {
-                    let va = a.version.as_deref().unwrap_or("");
-                    let vb = b.version.as_deref().unwrap_or("");
-                    va.cmp(vb)
-                }
                 SortField::Type => a.package_type.to_string().cmp(&b.package_type.to_string()),
+                SortField::Size => a.installed_size.cmp(&b.installed_size),
             };
             match order {
                 SortOrder::Ascending => result,
@@ -147,14 +118,6 @@ impl MergedPackageList {
 
     pub fn deselect_all_outdated(&mut self) {
         self.outdated_selection.clear();
-    }
-
-    pub fn has_selected_outdated(&self) -> bool {
-        self.outdated_selection.has_selection()
-    }
-
-    pub fn get_selected_outdated(&self) -> Vec<String> {
-        self.outdated_selection.get_selected()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -184,17 +147,20 @@ impl MergedPackageList {
             .show(ui, |ui| {
                 // Outdated Packages Section
                 if !self.outdated_packages.is_empty() {
-                    ui.heading("⚠️ Outdated Packages");
+                    ui.heading("⚠ Outdated Packages");
                     ui.separator();
 
                     TableBuilder::new(ui)
+                        .id_salt("outdated_packages_table")
                         .striped(true)
                         .resizable(true)
+                        .vscroll(false)
                         .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
                         .column(Column::initial(30.0).resizable(false)) // Checkbox
                         .column(Column::auto().at_least(150.0).resizable(true)) // Name
                         .column(Column::initial(150.0).resizable(true)) // Version
                         .column(Column::initial(80.0).resizable(true)) // Type
+                        .column(Column::initial(80.0).resizable(true)) // Size
                         .column(Column::initial(100.0).resizable(true)) // Status
                         .column(Column::remainder().at_least(120.0)) // Actions
                         .header(20.0, |mut header| {
@@ -207,6 +173,9 @@ impl MergedPackageList {
                             });
                             header.col(|ui| {
                                 ui.strong("Type");
+                            });
+                            header.col(|ui| {
+                                ui.strong("Size");
                             });
                             header.col(|ui| {
                                 ui.strong("Status");
@@ -285,9 +254,19 @@ impl MergedPackageList {
                                     row.col(|ui| {
                                         let type_str = match package.package_type {
                                             PackageType::Formula => "📦 Formula",
-                                            PackageType::Cask => "🖥️ Cask",
+                                            PackageType::Cask => "Cask",
                                         };
                                         ui.label(type_str);
+                                    });
+
+                                    row.col(|ui| {
+                                        if let Some(size) = package.installed_size {
+                                            ui.label(crate::presentation::ui::app::format_size(
+                                                size,
+                                            ));
+                                        } else {
+                                            ui.label("-");
+                                        }
                                     });
 
                                     row.col(|ui| {
@@ -297,7 +276,7 @@ impl MergedPackageList {
                                             RichText::new("📌 Pinned")
                                                 .color(Color32::from_rgb(255, 200, 0))
                                         } else {
-                                            RichText::new("⚠️ Outdated")
+                                            RichText::new("⚠ Outdated")
                                                 .color(Color32::from_rgb(255, 165, 0))
                                         };
 
@@ -326,7 +305,7 @@ impl MergedPackageList {
                                             }
 
                                             if package.description.is_some()
-                                                && ui.button("ℹ️").on_hover_text("Info").clicked()
+                                                && ui.button("ℹ").on_hover_text("Info").clicked()
                                             {
                                                 self.show_info_action = Some(package.clone());
                                             }
@@ -338,10 +317,10 @@ impl MergedPackageList {
 
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        if ui.button("☑️ Select All").clicked() {
+                        if ui.button("Select All").clicked() {
                             self.select_all_outdated();
                         }
-                        if ui.button("☐ Deselect All").clicked() {
+                        if ui.button("Deselect All").clicked() {
                             self.deselect_all_outdated();
                         }
                         if ui
@@ -364,12 +343,15 @@ impl MergedPackageList {
                     ui.separator();
 
                     TableBuilder::new(ui)
+                        .id_salt("installed_packages_table")
                         .striped(true)
                         .resizable(true)
+                        .vscroll(false)
                         .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
                         .column(Column::auto().at_least(150.0).resizable(true)) // Name
                         .column(Column::initial(150.0).resizable(true)) // Version
                         .column(Column::initial(80.0).resizable(true)) // Type
+                        .column(Column::initial(80.0).resizable(true)) // Size
                         .column(Column::initial(100.0).resizable(true)) // Status
                         .column(Column::remainder().at_least(120.0)) // Actions
                         .header(20.0, |mut header| {
@@ -381,6 +363,9 @@ impl MergedPackageList {
                             });
                             header.col(|ui| {
                                 ui.strong("Type");
+                            });
+                            header.col(|ui| {
+                                ui.strong("Size");
                             });
                             header.col(|ui| {
                                 ui.strong("Status");
@@ -443,9 +428,19 @@ impl MergedPackageList {
                                     row.col(|ui| {
                                         let type_str = match package.package_type {
                                             PackageType::Formula => "📦 Formula",
-                                            PackageType::Cask => "🖥️ Cask",
+                                            PackageType::Cask => "Cask",
                                         };
                                         ui.label(type_str);
+                                    });
+
+                                    row.col(|ui| {
+                                        if let Some(size) = package.installed_size {
+                                            ui.label(crate::presentation::ui::app::format_size(
+                                                size,
+                                            ));
+                                        } else {
+                                            ui.label("-");
+                                        }
                                     });
 
                                     row.col(|ui| {
@@ -455,7 +450,7 @@ impl MergedPackageList {
                                             RichText::new("📌 Pinned")
                                                 .color(Color32::from_rgb(255, 200, 0))
                                         } else {
-                                            RichText::new("✅ Installed")
+                                            RichText::new("Installed")
                                                 .color(Color32::from_rgb(0, 255, 0))
                                         };
 
@@ -468,8 +463,7 @@ impl MergedPackageList {
 
                                     row.col(|ui| {
                                         ui.horizontal(|ui| {
-                                            if ui.button("🗑️").on_hover_text("Uninstall").clicked()
-                                            {
+                                            if ui.button("X").on_hover_text("Uninstall").clicked() {
                                                 *on_uninstall = Some(package.clone());
                                             }
                                             if matches!(package.package_type, PackageType::Formula)
@@ -500,7 +494,7 @@ impl MergedPackageList {
                                                     *on_load_info = Some(package.clone());
                                                 }
                                             } else if package.description.is_some()
-                                                && ui.button("ℹ️").on_hover_text("Info").clicked()
+                                                && ui.button("ℹ").on_hover_text("Info").clicked()
                                             {
                                                 self.show_info_action = Some(package.clone());
                                             }

@@ -1,10 +1,24 @@
 use serde::{Deserialize, Serialize};
 
+fn default_true() -> bool {
+    true
+}
+
+fn default_debounce_delay() -> u64 {
+    2000 // 2 seconds
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AppConfig {
     pub theme: ThemeMode,
     pub auto_update_check: bool,
     pub confirm_before_actions: bool,
+
+    #[serde(default = "default_true")]
+    pub search_debounce_enabled: bool,
+
+    #[serde(default = "default_debounce_delay")]
+    pub search_debounce_delay: u64, // in milliseconds
 }
 
 impl Default for AppConfig {
@@ -13,6 +27,8 @@ impl Default for AppConfig {
             theme: ThemeMode::System,
             auto_update_check: true,
             confirm_before_actions: true,
+            search_debounce_enabled: true,
+            search_debounce_delay: 2000,
         }
     }
 }
@@ -34,6 +50,8 @@ mod tests {
         assert_eq!(config.theme, ThemeMode::System);
         assert!(config.auto_update_check);
         assert!(config.confirm_before_actions);
+        assert!(config.search_debounce_enabled);
+        assert_eq!(config.search_debounce_delay, 2000);
     }
 
     #[test]
@@ -42,12 +60,16 @@ mod tests {
             theme: ThemeMode::Dark,
             auto_update_check: false,
             confirm_before_actions: true,
+            search_debounce_enabled: false,
+            search_debounce_delay: 1000,
         };
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: AppConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.theme, ThemeMode::Dark);
         assert!(!deserialized.auto_update_check);
         assert!(deserialized.confirm_before_actions);
+        assert!(!deserialized.search_debounce_enabled);
+        assert_eq!(deserialized.search_debounce_delay, 1000);
     }
 
     #[test]
@@ -57,5 +79,7 @@ mod tests {
         assert_eq!(config.theme, ThemeMode::Light);
         assert!(config.auto_update_check);
         assert!(!config.confirm_before_actions);
+        assert!(config.search_debounce_enabled);
+        assert_eq!(config.search_debounce_delay, 2000);
     }
 }

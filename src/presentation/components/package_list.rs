@@ -146,7 +146,7 @@ impl PackageList {
                         row.col(|ui| {
                             let type_str = match package.package_type {
                                 PackageType::Formula => "📦 Formula",
-                                PackageType::Cask => "🖥️ Cask",
+                                PackageType::Cask => "Cask",
                             };
                             ui.label(type_str);
                         });
@@ -156,9 +156,9 @@ impl PackageList {
                             let status_text = if package.pinned {
                                 RichText::new("📌 Pinned").color(Color32::from_rgb(255, 200, 0))
                             } else if package.outdated {
-                                RichText::new("⚠️ Outdated").color(Color32::from_rgb(255, 165, 0))
+                                RichText::new("⚠ Outdated").color(Color32::from_rgb(255, 165, 0))
                             } else if package.installed {
-                                RichText::new("✅ Installed").color(Color32::from_rgb(0, 255, 0))
+                                RichText::new("Installed").color(Color32::from_rgb(0, 255, 0))
                             } else {
                                 RichText::new("Available").color(Color32::GRAY)
                             };
@@ -173,7 +173,7 @@ impl PackageList {
                         row.col(|ui| {
                             ui.horizontal(|ui| {
                                 if package.installed {
-                                    if ui.button("🗑️").on_hover_text("Uninstall").clicked() {
+                                    if ui.button("X").on_hover_text("Uninstall").clicked() {
                                         *on_uninstall = Some(package.clone());
                                     }
                                     if package.outdated
@@ -192,7 +192,7 @@ impl PackageList {
                                             *on_pin = Some(package.clone());
                                         }
                                     }
-                                } else if ui.button("⬇️").on_hover_text("Install").clicked() {
+                                } else if ui.button("⬇").on_hover_text("Install").clicked() {
                                     *on_install = Some(package.clone());
                                 }
 
@@ -204,7 +204,7 @@ impl PackageList {
                                         *on_load_info = Some(package.clone());
                                     }
                                 } else if package.description.is_some()
-                                    && ui.button("ℹ️").on_hover_text("Info").clicked()
+                                    && ui.button("ℹ").on_hover_text("Info").clicked()
                                 {
                                     self.show_info_action = Some(package.clone());
                                 }

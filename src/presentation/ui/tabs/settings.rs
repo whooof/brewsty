@@ -13,6 +13,8 @@ pub enum SettingsAction {
     LoadTaps,
     Tap(String),
     Untap(String),
+    ExportBrewfile,
+    SyncBrewfile,
 }
 
 pub struct SettingsTab;
@@ -25,7 +27,9 @@ impl SettingsTab {
         log_manager: &mut LogManager,
         loading_export: bool,
         loading_import: bool,
-        doctor_output: &Option<String>,
+        loading_bundle_dump: bool,
+        loading_bundle_check: bool,
+        doctor_output: &Option<crate::domain::entities::DoctorOutput>,
         taps: &[String],
         new_tap_name: &mut String,
     ) -> Vec<SettingsAction> {
@@ -95,6 +99,35 @@ impl SettingsTab {
                         {
                             actions.push(SettingsAction::SaveConfig);
                         }
+
+                        ui.separator();
+
+                        if ui
+                            .checkbox(
+                                &mut config.search_debounce_enabled,
+                                "Debounce Search (As-You-Type)",
+                            )
+                            .changed()
+                        {
+                            actions.push(SettingsAction::SaveConfig);
+                        }
+
+                        if config.search_debounce_enabled {
+                            ui.horizontal(|ui| {
+                                ui.label("Delay (ms):");
+                                let mut delay = config.search_debounce_delay as f64;
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut delay, 500.0..=5000.0)
+                                            .step_by(100.0),
+                                    )
+                                    .changed()
+                                {
+                                    config.search_debounce_delay = delay as u64;
+                                    actions.push(SettingsAction::SaveConfig);
+                                }
+                            });
+                        }
                     });
 
                     ui.add_space(10.0);
@@ -150,6 +183,14 @@ impl SettingsTab {
 
                             ui.add_space(10.0);
 
+                            if ui.button("Cleanup Orphans").clicked() {
+                                actions
+                                    .push(SettingsAction::ShowCleanupPreview(CleanupType::Orphans));
+                            }
+                            ui.label("Remove unneeded dependencies");
+
+                            ui.add_space(10.0);
+
                             if ui.button("Update All Packages").clicked() {
                                 actions.push(SettingsAction::UpdateAll);
                             }
@@ -160,18 +201,48 @@ impl SettingsTab {
                     ui.add_space(10.0);
 
                     ui.group(|ui| {
-                        ui.heading("🩺 Brew Doctor");
+                        ui.heading("Brew Doctor");
                         if ui.button("Run Diagnostics").clicked() {
                             actions.push(SettingsAction::RunDoctor);
                         }
                         if let Some(output) = doctor_output {
                             ui.separator();
-                            egui::ScrollArea::vertical()
-                                .id_salt("doctor_output")
-                                .max_height(200.0)
-                                .show(ui, |ui| {
-                                    ui.monospace(output);
-                                });
+                            if output.is_ready && output.warnings.is_empty() {
+                                ui.label(
+                                    egui::RichText::new("✅ Your system is ready to brew.")
+                                        .color(egui::Color32::GREEN),
+                                );
+                            } else {
+                                egui::ScrollArea::vertical()
+                                    .id_salt("doctor_output")
+                                    .max_height(200.0)
+                                    .show(ui, |ui| {
+                                        for (i, warning) in output.warnings.iter().enumerate() {
+                                            ui.group(|ui| {
+                                                ui.horizontal(|ui| {
+                                                    ui.label(
+                                                        egui::RichText::new("⚠")
+                                                            .color(egui::Color32::YELLOW),
+                                                    );
+                                                    ui.label(
+                                                        egui::RichText::new(&warning.title)
+                                                            .strong(),
+                                                    );
+                                                });
+                                                if !warning.body.is_empty() {
+                                                    egui::CollapsingHeader::new("Details")
+                                                        .id_salt(format!("doctor_warning_{}", i))
+                                                        .show(ui, |ui| {
+                                                            ui.monospace(&warning.body);
+                                                        });
+                                                }
+                                            });
+                                        }
+                                        if !output.is_ready && output.warnings.is_empty() {
+                                            ui.monospace(&output.raw_output);
+                                        }
+                                    });
+                            }
                         }
                     });
                 });
@@ -198,6 +269,35 @@ impl SettingsTab {
                                 actions.push(SettingsAction::ImportPackages);
                             }
                             ui.label("Import from JSON");
+
+                            ui.add_space(15.0);
+                            ui.separator();
+                            ui.heading("Brewfile Sync");
+                            ui.add_space(5.0);
+
+                            if ui
+                                .add_enabled(
+                                    !loading_bundle_dump,
+                                    egui::Button::new("Export to Brewfile"),
+                                )
+                                .clicked()
+                            {
+                                actions.push(SettingsAction::ExportBrewfile);
+                            }
+                            ui.label("Dump current state to Brewfile");
+
+                            ui.add_space(10.0);
+
+                            if ui
+                                .add_enabled(
+                                    !loading_bundle_check,
+                                    egui::Button::new("Sync with Brewfile"),
+                                )
+                                .clicked()
+                            {
+                                actions.push(SettingsAction::SyncBrewfile);
+                            }
+                            ui.label("Compare & sync with a Brewfile");
                         });
                     });
 

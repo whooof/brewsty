@@ -104,6 +104,36 @@ impl BrewCommand {
         Ok(BrewOutput { stdout, stderr })
     }
 
+    pub fn get_installed_sizes() -> Result<std::collections::HashMap<String, u64>> {
+        tracing::debug!("Running: brew --prefix to get Cellar and Caskroom paths");
+        let prefix = Self::execute_brew(&["--prefix"])?.trim().to_string();
+
+        let cellar = format!("{}/Cellar/*", prefix);
+        let caskroom = format!("{}/Caskroom/*", prefix);
+
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg(format!("du -sk {} {} 2>/dev/null", cellar, caskroom))
+            .output()?;
+
+        let mut sizes = std::collections::HashMap::new();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        for line in stdout.lines() {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() == 2 {
+                if let Ok(size_kb) = parts[0].parse::<u64>() {
+                    let path = parts[1];
+                    if let Some(name) = path.split('/').last() {
+                        sizes.insert(name.to_string(), size_kb * 1024);
+                    }
+                }
+            }
+        }
+
+        Ok(sizes)
+    }
+
     pub fn list_packages(package_type: PackageType) -> Result<String> {
         let type_arg = match package_type {
             PackageType::Formula => "--formula",
@@ -237,6 +267,23 @@ impl BrewCommand {
         Ok(BrewOutput { stdout, stderr })
     }
 
+    pub fn autoremove_dry_run() -> Result<String> {
+        Self::execute_brew(&["autoremove", "-n"])
+    }
+
+    pub fn autoremove() -> Result<BrewOutput> {
+        let output = Command::new("brew").args(["autoremove"]).output()?;
+
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+
+        if !output.status.success() {
+            return Err(anyhow!("Failed to autoremove: {}", stderr));
+        }
+
+        Ok(BrewOutput { stdout, stderr })
+    }
+
     pub fn search_packages(query: &str, package_type: PackageType) -> Result<String> {
         let type_arg = Self::get_package_type_arg(package_type);
         Self::execute_brew(&["search", type_arg, query])
@@ -277,49 +324,38 @@ impl BrewCommand {
         Self::execute_brew(&["services", "list"])
     }
 
+    pub fn list_services_json() -> Result<String> {
+        Self::execute_brew(&["services", "list", "--json"])
+    }
+
+    pub fn service_info_json(name: &str) -> Result<String> {
+        Self::execute_brew(&["services", "info", name, "--json"])
+    }
+
+    /// Read the last `tail_lines` lines from a log file at `path`.
+    pub fn read_service_log(path: &str, tail_lines: usize) -> Result<String> {
+        use std::io::{BufRead, BufReader};
+
+        let file = std::fs::File::open(path)
+            .map_err(|e| anyhow!("Cannot open log file '{}': {}", path, e))?;
+
+        let reader = BufReader::new(file);
+        let all_lines: Vec<String> = reader.lines().collect::<std::io::Result<Vec<_>>>()?;
+
+        let start = all_lines.len().saturating_sub(tail_lines);
+        Ok(all_lines[start..].join("\n"))
+    }
+
     pub fn start_service(name: &str) -> Result<BrewOutput> {
-        let output = Command::new("brew")
-            .args(["services", "start", name])
-            .output()?;
-
-        let stdout = String::from_utf8(output.stdout)?;
-        let stderr = String::from_utf8(output.stderr)?;
-
-        if !output.status.success() {
-            return Err(anyhow!("Failed to start service: {}", stderr));
-        }
-
-        Ok(BrewOutput { stdout, stderr })
+        Self::execute_brew_with_output(&["services", "start", name])
     }
 
     pub fn stop_service(name: &str) -> Result<BrewOutput> {
-        let output = Command::new("brew")
-            .args(["services", "stop", name])
-            .output()?;
-
-        let stdout = String::from_utf8(output.stdout)?;
-        let stderr = String::from_utf8(output.stderr)?;
-
-        if !output.status.success() {
-            return Err(anyhow!("Failed to stop service: {}", stderr));
-        }
-
-        Ok(BrewOutput { stdout, stderr })
+        Self::execute_brew_with_output(&["services", "stop", name])
     }
 
     pub fn restart_service(name: &str) -> Result<BrewOutput> {
-        let output = Command::new("brew")
-            .args(["services", "restart", name])
-            .output()?;
-
-        let stdout = String::from_utf8(output.stdout)?;
-        let stderr = String::from_utf8(output.stderr)?;
-
-        if !output.status.success() {
-            return Err(anyhow!("Failed to restart service: {}", stderr));
-        }
-
-        Ok(BrewOutput { stdout, stderr })
+        Self::execute_brew_with_output(&["services", "restart", name])
     }
 
     // Export package list with versions
@@ -338,6 +374,62 @@ impl BrewCommand {
         let stdout = String::from_utf8(output.stdout)?;
         let stderr = String::from_utf8(output.stderr)?;
         Ok(format!("{}{}", stdout, stderr))
+    }
+
+    pub fn bundle_dump(path: &str) -> Result<String> {
+        let output = Command::new("brew")
+            .args(["bundle", "dump", "--force", "--file", path])
+            .output()?;
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+        if !output.status.success() {
+            anyhow::bail!("Brew bundle dump failed: {}", stderr);
+        }
+        Ok(stdout)
+    }
+
+    pub fn bundle_check(path: &str) -> Result<String> {
+        let output = Command::new("brew")
+            .args(["bundle", "check", "--file", path, "--verbose"])
+            .output()?;
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+        // 'check' fails if there are missing dependencies
+        // So we just return the output whether it fails or not.
+        Ok(format!("{}\n{}", stdout, stderr))
+    }
+
+    pub fn bundle_cleanup_dry_run(path: &str) -> Result<String> {
+        let output = Command::new("brew")
+            .args(["bundle", "cleanup", "--file", path])
+            .output()?;
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+        Ok(format!("{}\n{}", stdout, stderr))
+    }
+
+    pub fn bundle_install(path: &str) -> Result<String> {
+        let output = Command::new("brew")
+            .args(["bundle", "install", "--file", path])
+            .output()?;
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+        if !output.status.success() {
+            anyhow::bail!("Brew bundle install failed: {}", stderr);
+        }
+        Ok(stdout)
+    }
+
+    pub fn bundle_cleanup_force(path: &str) -> Result<String> {
+        let output = Command::new("brew")
+            .args(["bundle", "cleanup", "--force", "--file", path])
+            .output()?;
+        let stdout = String::from_utf8(output.stdout)?;
+        let stderr = String::from_utf8(output.stderr)?;
+        if !output.status.success() {
+            anyhow::bail!("Brew bundle cleanup failed: {}", stderr);
+        }
+        Ok(stdout)
     }
 
     // Dependencies

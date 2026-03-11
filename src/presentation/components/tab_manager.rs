@@ -5,6 +5,7 @@ pub enum Tab {
     Installed,
     SearchInstall,
     Services,
+    History,
     Settings,
     Log,
 }
@@ -24,13 +25,13 @@ pub struct TabManager {
     tab_states: HashMap<Tab, TabState>,
 }
 
-#[allow(dead_code)]
 impl TabManager {
     pub fn new() -> Self {
         let mut tab_states = HashMap::new();
         tab_states.insert(Tab::Installed, TabState::new());
         tab_states.insert(Tab::SearchInstall, TabState::new());
         tab_states.insert(Tab::Services, TabState::new());
+        tab_states.insert(Tab::History, TabState::new());
         tab_states.insert(Tab::Settings, TabState::new());
         tab_states.insert(Tab::Log, TabState::new());
 
@@ -62,12 +63,6 @@ impl TabManager {
     pub fn mark_loaded(&mut self, tab: Tab) {
         if let Some(state) = self.tab_states.get_mut(&tab) {
             state.loaded = true;
-        }
-    }
-
-    pub fn mark_unloaded(&mut self, tab: Tab) {
-        if let Some(state) = self.tab_states.get_mut(&tab) {
-            state.loaded = false;
         }
     }
 }

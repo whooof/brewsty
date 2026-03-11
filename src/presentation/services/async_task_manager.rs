@@ -1,4 +1,7 @@
-use crate::domain::entities::{CleanupPreview, Package, PackageType, Service};
+use crate::domain::entities::brewfile::BrewfileSyncPreview;
+use crate::domain::entities::{
+    CleanupPreview, DoctorOutput, Package, PackageType, Service, ServiceInfo,
+};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
@@ -58,6 +61,11 @@ pub enum AsyncTask {
         logs: Arc<Mutex<Vec<String>>>,
         message: Arc<Mutex<String>>,
     },
+    CleanOrphans {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
     Pin {
         package_name: String,
         success: Arc<Mutex<Option<bool>>>,
@@ -108,7 +116,7 @@ pub enum AsyncTask {
         error: Arc<Mutex<Option<String>>>,
     },
     Doctor {
-        result: Arc<Mutex<Option<String>>>,
+        result: Arc<Mutex<Option<DoctorOutput>>>,
         error: Arc<Mutex<Option<String>>>,
     },
     LoadTaps {
@@ -124,6 +132,30 @@ pub enum AsyncTask {
         success: Arc<Mutex<Option<bool>>>,
         logs: Arc<Mutex<Vec<String>>>,
         message: Arc<Mutex<String>>,
+    },
+    BundleDump {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    BundleCheckPreview {
+        preview: Arc<Mutex<Option<BrewfileSyncPreview>>>,
+        error: Arc<Mutex<Option<String>>>,
+    },
+    BundleApply {
+        success: Arc<Mutex<Option<bool>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+        message: Arc<Mutex<String>>,
+    },
+    ServiceInfoLoad {
+        service_name: String,
+        result: Arc<Mutex<Option<ServiceInfo>>>,
+        error: Arc<Mutex<Option<String>>>,
+    },
+    ServiceLogLoad {
+        service_name: String,
+        result: Arc<Mutex<Option<String>>>,
+        error: Arc<Mutex<Option<String>>>,
     },
 }
 
@@ -171,9 +203,9 @@ impl TaskSharedState {
 }
 
 pub struct TaskResult {
-    pub installed_packages: Option<Vec<Package>>,
-    pub outdated_packages: Option<Vec<Package>>,
-    pub search_results: Option<Vec<Package>>,
+    pub installed_packages: Option<(Vec<Package>, Vec<String>)>,
+    pub outdated_packages: Option<(Vec<Package>, Vec<String>)>,
+    pub search_results: Option<(Vec<Package>, Vec<String>)>,
     pub package_info: Option<(String, Package)>,
     pub logs: Vec<String>,
     pub completed_package_info_loads: Vec<String>,
@@ -183,9 +215,10 @@ pub struct TaskResult {
     pub update_all_completed: Option<(bool, String)>,
     pub clean_cache_completed: Option<(bool, String)>,
     pub cleanup_old_versions_completed: Option<(bool, String)>,
+    pub clean_orphans_completed: Option<(bool, String)>,
     pub pin_completed: Option<(String, bool, String)>,
     pub unpin_completed: Option<(String, bool, String)>,
-    pub services: Option<Vec<Service>>,
+    pub services: Option<(Vec<Service>, Vec<String>)>,
     pub start_service_completed: Option<(String, bool, String)>,
     pub stop_service_completed: Option<(String, bool, String)>,
     pub restart_service_completed: Option<(String, bool, String)>,
@@ -195,10 +228,15 @@ pub struct TaskResult {
         crate::presentation::components::CleanupType,
         Result<CleanupPreview, String>,
     )>,
-    pub doctor_result: Option<Result<String, String>>,
-    pub taps: Option<Vec<String>>,
+    pub doctor_result: Option<Result<DoctorOutput, String>>,
+    pub taps: Option<(Vec<String>, Vec<String>)>,
     pub tap_completed: Option<(bool, String)>,
     pub untap_completed: Option<(bool, String)>,
+    pub bundle_dump_completed: Option<(bool, String)>,
+    pub bundle_check_preview_result: Option<Result<BrewfileSyncPreview, String>>,
+    pub bundle_apply_completed: Option<(bool, String)>,
+    pub service_info_result: Option<(String, Result<ServiceInfo, String>)>,
+    pub service_log_result: Option<(String, Result<String, String>)>,
 }
 
 /// Try to poll a completed success/logs/message task. Returns Some((succeeded, message, logs)) if done.
@@ -293,6 +331,10 @@ impl AsyncTaskManager {
         self.packages_loading_info.len() < 15
     }
 
+    pub fn available_package_info_slots(&self) -> usize {
+        15usize.saturating_sub(self.packages_loading_info.len())
+    }
+
     pub fn drain_pending_loads(&mut self, count: usize) -> Vec<(String, PackageType)> {
         self.pending_package_info_loads
             .drain(..count.min(self.pending_package_info_loads.len()))
@@ -317,6 +359,7 @@ impl AsyncTaskManager {
             update_all_completed: None,
             clean_cache_completed: None,
             cleanup_old_versions_completed: None,
+            clean_orphans_completed: None,
             pin_completed: None,
             unpin_completed: None,
             services: None,
@@ -330,6 +373,11 @@ impl AsyncTaskManager {
             taps: None,
             tap_completed: None,
             untap_completed: None,
+            bundle_dump_completed: None,
+            bundle_check_preview_result: None,
+            bundle_apply_completed: None,
+            service_info_result: None,
+            service_log_result: None,
         };
 
         let mut tasks_to_keep = Vec::new();
@@ -399,7 +447,7 @@ impl AsyncTaskManager {
             match task {
                 AsyncTask::LoadInstalled { packages, logs } => {
                     if let Some((data, log)) = poll_data_task(&packages, &logs) {
-                        result.installed_packages = Some(data);
+                        result.installed_packages = Some((data, log.clone()));
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::LoadInstalled { packages, logs });
@@ -407,7 +455,7 @@ impl AsyncTaskManager {
                 }
                 AsyncTask::LoadOutdated { packages, logs } => {
                     if let Some((data, log)) = poll_data_task(&packages, &logs) {
-                        result.outdated_packages = Some(data);
+                        result.outdated_packages = Some((data, log.clone()));
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::LoadOutdated { packages, logs });
@@ -416,7 +464,7 @@ impl AsyncTaskManager {
                 AsyncTask::Search { results, logs } => {
                     if let Some((data, log)) = poll_data_task(&results, &logs) {
                         tracing::info!("Search completed, found {} packages", data.len());
-                        result.search_results = Some(data);
+                        result.search_results = Some((data, log.clone()));
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::Search { results, logs });
@@ -518,6 +566,22 @@ impl AsyncTaskManager {
                         });
                     }
                 }
+                AsyncTask::CleanOrphans {
+                    success,
+                    logs,
+                    message,
+                } => {
+                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
+                        result.clean_orphans_completed = Some((ok, msg));
+                        result.logs.extend(log);
+                    } else {
+                        active_tasks_to_keep.push(AsyncTask::CleanOrphans {
+                            success,
+                            logs,
+                            message,
+                        });
+                    }
+                }
                 AsyncTask::Pin {
                     package_name,
                     success,
@@ -556,7 +620,7 @@ impl AsyncTaskManager {
                 }
                 AsyncTask::LoadServices { services, logs } => {
                     if let Some((data, log)) = poll_data_task(&services, &logs) {
-                        result.services = Some(data);
+                        result.services = Some((data, log.clone()));
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::LoadServices { services, logs });
@@ -709,7 +773,7 @@ impl AsyncTaskManager {
                 }
                 AsyncTask::LoadTaps { taps, logs } => {
                     if let Some((data, log)) = poll_data_task(&taps, &logs) {
-                        result.taps = Some(data);
+                        result.taps = Some((data, log.clone()));
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::LoadTaps { taps, logs });
@@ -747,6 +811,124 @@ impl AsyncTaskManager {
                         });
                     }
                 }
+                AsyncTask::BundleDump {
+                    success,
+                    logs,
+                    message,
+                } => {
+                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
+                        result.bundle_dump_completed = Some((ok, msg));
+                        result.logs.extend(log);
+                    } else {
+                        active_tasks_to_keep.push(AsyncTask::BundleDump {
+                            success,
+                            logs,
+                            message,
+                        });
+                    }
+                }
+                AsyncTask::BundleCheckPreview { preview, error } => {
+                    let done = if let Ok(err) = error.try_lock() {
+                        if let Some(err_msg) = err.as_ref() {
+                            result.bundle_check_preview_result = Some(Err(err_msg.clone()));
+                            true
+                        } else if let Ok(prev) = preview.try_lock() {
+                            if let Some(p) = prev.as_ref() {
+                                result.bundle_check_preview_result = Some(Ok(p.clone()));
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+                    if !done {
+                        active_tasks_to_keep.push(AsyncTask::BundleCheckPreview { preview, error });
+                    }
+                }
+                AsyncTask::BundleApply {
+                    success,
+                    logs,
+                    message,
+                } => {
+                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
+                        result.bundle_apply_completed = Some((ok, msg));
+                        result.logs.extend(log);
+                    } else {
+                        active_tasks_to_keep.push(AsyncTask::BundleApply {
+                            success,
+                            logs,
+                            message,
+                        });
+                    }
+                }
+                AsyncTask::ServiceInfoLoad {
+                    service_name,
+                    result: info_result,
+                    error,
+                } => {
+                    let done = if let Ok(err) = error.try_lock() {
+                        if let Some(err_msg) = err.as_ref() {
+                            result.service_info_result =
+                                Some((service_name.clone(), Err(err_msg.clone())));
+                            true
+                        } else if let Ok(res) = info_result.try_lock() {
+                            if let Some(info) = res.as_ref() {
+                                result.service_info_result =
+                                    Some((service_name.clone(), Ok(info.clone())));
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+                    if !done {
+                        active_tasks_to_keep.push(AsyncTask::ServiceInfoLoad {
+                            service_name,
+                            result: info_result,
+                            error,
+                        });
+                    }
+                }
+                AsyncTask::ServiceLogLoad {
+                    service_name,
+                    result: log_result,
+                    error,
+                } => {
+                    let done = if let Ok(err) = error.try_lock() {
+                        if let Some(err_msg) = err.as_ref() {
+                            result.service_log_result =
+                                Some((service_name.clone(), Err(err_msg.clone())));
+                            true
+                        } else if let Ok(res) = log_result.try_lock() {
+                            if let Some(log_text) = res.as_ref() {
+                                result.service_log_result =
+                                    Some((service_name.clone(), Ok(log_text.clone())));
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+                    if !done {
+                        active_tasks_to_keep.push(AsyncTask::ServiceLogLoad {
+                            service_name,
+                            result: log_result,
+                            error,
+                        });
+                    }
+                }
                 AsyncTask::LoadPackageInfo { .. } => {}
             }
         }
@@ -765,5 +947,40 @@ impl AsyncTask {
             AsyncTask::Search { .. } => Some(TaskKind::Search),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn available_package_info_slots_saturates_at_zero() {
+        let mut manager = AsyncTaskManager::new();
+        for i in 0..20 {
+            manager.packages_loading_info.insert(format!("pkg-{i}"));
+        }
+
+        assert_eq!(manager.available_package_info_slots(), 0);
+    }
+
+    #[test]
+    fn available_package_info_slots_reflects_remaining_capacity() {
+        let mut manager = AsyncTaskManager::new();
+        for i in 0..4 {
+            manager.packages_loading_info.insert(format!("pkg-{i}"));
+        }
+
+        assert_eq!(manager.available_package_info_slots(), 11);
+    }
+
+    #[test]
+    fn queue_package_info_load_deduplicates_entries() {
+        let mut manager = AsyncTaskManager::new();
+
+        manager.queue_package_info_load("wget".to_string(), PackageType::Formula);
+        manager.queue_package_info_load("wget".to_string(), PackageType::Formula);
+
+        assert_eq!(manager.pending_loads_count(), 1);
     }
 }

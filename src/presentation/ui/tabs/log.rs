@@ -16,10 +16,10 @@ impl LogTab {
         ui.separator();
 
         ui.horizontal(|ui| {
-            if ui.button("📋 Copy All").clicked() {
+            if ui.button("Copy All").clicked() {
                 actions.push(LogAction::CopyAll);
             }
-            if ui.button("🗑 Clear").clicked() {
+            if ui.button("Clear").clicked() {
                 actions.push(LogAction::Clear);
             }
         });
@@ -35,6 +35,7 @@ impl LogTab {
                     .inner_margin(8.0);
                 bg_frame.show(ui, |ui| {
                     ui.set_width(ui.available_width());
+                    ui.spacing_mut().item_spacing.y = 2.0;
                     ui.set_style({
                         let mut style = (*ui.ctx().style()).clone();
                         style.override_font_id = Some(egui::FontId::monospace(12.0));

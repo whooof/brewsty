@@ -2,13 +2,15 @@ mod handlers;
 mod polling;
 
 use crate::application::UseCaseContainer;
-use crate::domain::entities::{AppConfig, Package};
+use crate::domain::entities::{AppConfig, OperationHistory, Package};
 use crate::infrastructure::config_repository::ConfigRepository;
 use crate::presentation::components::{
-    CleanupAction, CleanupModal, CleanupType, FilterState, InfoModal, InfoModalAction, LogManager,
-    MergedPackageList, PackageList, PasswordModal, ServiceList, Tab, TabManager,
+    BrewfileSyncAction, BrewfileSyncModal, CleanupAction, CleanupModal, CleanupType, FilterState,
+    InfoModal, InfoModalAction, LogManager, MergedPackageList, PackageList, PasswordModal,
+    ServiceList, Tab, TabManager, ToastManager,
 };
 use crate::presentation::services::{AsyncExecutor, AsyncTaskManager};
+use crate::presentation::ui::tabs::history::{HistoryAction, HistoryTab};
 use crate::presentation::ui::tabs::installed::{InstalledAction, InstalledTab};
 use crate::presentation::ui::tabs::log::{LogAction, LogTab};
 use crate::presentation::ui::tabs::search::{SearchAction, SearchTab};
@@ -28,6 +30,7 @@ pub struct BrewstyApp {
     pub(super) info_modal: InfoModal,
     pub(super) password_modal: PasswordModal,
     pub(super) log_manager: LogManager,
+    pub(super) toast_manager: ToastManager,
     pub(super) log_rx: Receiver<String>,
 
     pub(super) merged_packages: MergedPackageList,
@@ -49,8 +52,12 @@ pub struct BrewstyApp {
     pub(super) loading_update_all: bool,
     pub(super) loading_clean_cache: bool,
     pub(super) loading_cleanup_old_versions: bool,
+    pub(super) loading_clean_orphans: bool,
     pub(super) loading_export: bool,
     pub(super) loading_import: bool,
+    pub(super) loading_bundle_dump: bool,
+    pub(super) loading_bundle_check: bool,
+    pub(super) loading_bundle_apply: bool,
 
     pub(super) current_install_package: Option<String>,
     pub(super) current_uninstall_package: Option<String>,
@@ -69,11 +76,14 @@ pub struct BrewstyApp {
     pub(super) loading: bool,
     pub(super) status_message: String,
     pub(super) output_panel_height: f32,
-    pub(super) doctor_output: Option<String>,
+    pub(super) doctor_output: Option<crate::domain::entities::DoctorOutput>,
     pub(super) taps: Vec<String>,
     pub(super) new_tap_name: String,
+    pub(super) brewfile_sync_modal: BrewfileSyncModal,
+    pub(super) current_brewfile_path: Option<String>,
     #[allow(clippy::type_complexity)]
     pub(super) pending_deps_load: Option<Arc<Mutex<Option<(String, String)>>>>,
+    pub(super) operation_history: OperationHistory,
 }
 
 #[derive(Clone, Debug)]
@@ -101,6 +111,11 @@ impl BrewstyApp {
             AppConfig::default()
         });
 
+        let operation_history = use_cases.load_history.execute().unwrap_or_else(|e| {
+            tracing::error!("Failed to load operation history: {}", e);
+            OperationHistory::default()
+        });
+
         Self {
             tab_manager: TabManager::new(),
             filter_state: FilterState::new(),
@@ -112,6 +127,7 @@ impl BrewstyApp {
             info_modal: InfoModal::new(),
             password_modal: PasswordModal::new(),
             log_manager: LogManager::new(),
+            toast_manager: ToastManager::new(),
             log_rx,
             merged_packages: MergedPackageList::new(),
             search_results: PackageList::new(),
@@ -128,8 +144,12 @@ impl BrewstyApp {
             loading_update_all: false,
             loading_clean_cache: false,
             loading_cleanup_old_versions: false,
+            loading_clean_orphans: false,
             loading_export: false,
             loading_import: false,
+            loading_bundle_dump: false,
+            loading_bundle_check: false,
+            loading_bundle_apply: false,
             current_install_package: None,
             current_uninstall_package: None,
             current_update_package: None,
@@ -147,7 +167,10 @@ impl BrewstyApp {
             doctor_output: None,
             taps: Vec::new(),
             new_tap_name: String::new(),
+            brewfile_sync_modal: BrewfileSyncModal::new(),
+            current_brewfile_path: None,
             pending_deps_load: None,
+            operation_history,
         }
     }
 
@@ -157,12 +180,32 @@ impl BrewstyApp {
         }
     }
 
+    pub(super) fn record_operation(
+        &mut self,
+        operation: crate::domain::entities::OperationType,
+        target: Option<String>,
+        package_type: Option<crate::domain::entities::PackageType>,
+        success: bool,
+        detail: Option<String>,
+    ) {
+        if let Err(e) = self.use_cases.record_operation.execute(
+            &mut self.operation_history,
+            operation,
+            target,
+            package_type,
+            success,
+            detail,
+        ) {
+            tracing::error!("Failed to record operation: {}", e);
+        }
+    }
+
     fn apply_theme(&self, ctx: &egui::Context) {
         crate::presentation::style::configure_style(ctx, self.config.theme);
     }
 }
 
-pub(super) fn format_size(bytes: u64) -> String {
+pub fn format_size(bytes: u64) -> String {
     const KB: u64 = 1024;
     const MB: u64 = KB * 1024;
     const GB: u64 = MB * 1024;
@@ -187,9 +230,19 @@ impl eframe::App for BrewstyApp {
             ctx.request_repaint();
         }
 
+        // Check search debounce
+        if self.config.search_debounce_enabled
+            && self
+                .filter_state
+                .check_debounce_trigger(self.config.search_debounce_delay)
+        {
+            self.handle_search();
+        }
+
         if !self.initialized {
             self.initialized = true;
             self.load_installed_packages(self.config.auto_update_check);
+            self.load_services();
             self.apply_theme(ctx);
         }
 
@@ -213,9 +266,12 @@ impl eframe::App for BrewstyApp {
                 self.tab_manager.switch_to(Tab::Services);
             }
             if ctx.input(|i| i.key_pressed(egui::Key::Num4)) {
-                self.tab_manager.switch_to(Tab::Settings);
+                self.tab_manager.switch_to(Tab::History);
             }
             if ctx.input(|i| i.key_pressed(egui::Key::Num5)) {
+                self.tab_manager.switch_to(Tab::Settings);
+            }
+            if ctx.input(|i| i.key_pressed(egui::Key::Num6)) {
                 self.tab_manager.switch_to(Tab::Log);
             }
         }
@@ -261,6 +317,15 @@ impl eframe::App for BrewstyApp {
                     }
                 }
                 if ui
+                    .selectable_label(
+                        self.tab_manager.is_current(Tab::History),
+                        format!("History ({})", self.operation_history.records.len()),
+                    )
+                    .clicked()
+                {
+                    self.tab_manager.switch_to(Tab::History);
+                }
+                if ui
                     .selectable_label(self.tab_manager.is_current(Tab::Settings), "Settings")
                     .clicked()
                 {
@@ -273,54 +338,72 @@ impl eframe::App for BrewstyApp {
                     self.tab_manager.switch_to(Tab::Log);
                 }
             });
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                if self.loading {
+                    ui.spinner();
+                }
+                let status_text = if self.status_message.is_empty() {
+                    "Ready"
+                } else {
+                    &self.status_message
+                };
+                ui.label(egui::RichText::new(status_text).small());
+            });
             ui.add_space(8.0);
         });
 
-        egui::TopBottomPanel::bottom("bottom_panel")
-            .resizable(true)
-            .default_height(self.output_panel_height)
-            .show(ctx, |ui| {
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    if ui.button("Clear Output").clicked() {
-                        self.log_manager = LogManager::new();
-                    }
-                    ui.separator();
-                    if ui.button("📋 Copy Output").clicked() {
-                        let output = self
-                            .log_manager
-                            .all_logs()
-                            .map(|entry| {
-                                format!("[{}] {}", entry.format_timestamp(), entry.message)
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        ctx.copy_text(output);
-                    }
-                });
-
-                ui.separator();
-
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false; 2])
-                    .stick_to_bottom(true)
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-
-                        for entry in self.log_manager.filtered_logs() {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new(format!("[{}]", entry.format_timestamp()))
-                                        .color(egui::Color32::GRAY)
-                                        .monospace(),
-                                );
-                                ui.monospace(&entry.message);
-                            });
+        if self.tab_manager.current() != Tab::Log {
+            egui::TopBottomPanel::bottom("bottom_panel")
+                .resizable(true)
+                .default_height(self.output_panel_height)
+                .show(ctx, |ui| {
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Clear Output").clicked() {
+                            self.log_manager = LogManager::new();
+                        }
+                        ui.separator();
+                        if ui.button("Copy Output").clicked() {
+                            let output = self
+                                .log_manager
+                                .all_logs()
+                                .map(|entry| {
+                                    format!("[{}] {}", entry.format_timestamp(), entry.message)
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            ctx.copy_text(output);
                         }
                     });
 
-                self.output_panel_height = ui.min_rect().height();
-            });
+                    ui.separator();
+
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false; 2])
+                        .stick_to_bottom(true)
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            ui.spacing_mut().item_spacing.y = 2.0;
+
+                            for entry in self.log_manager.filtered_logs() {
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "[{}]",
+                                            entry.format_timestamp()
+                                        ))
+                                        .color(egui::Color32::GRAY)
+                                        .monospace(),
+                                    );
+                                    ui.monospace(&entry.message);
+                                });
+                            }
+                        });
+
+                    self.output_panel_height = ui.min_rect().height();
+                });
+        }
 
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.tab_manager.current() {
@@ -367,6 +450,11 @@ impl eframe::App for BrewstyApp {
                     for action in actions {
                         match action {
                             SearchAction::Search => self.handle_search(),
+                            SearchAction::QueryChanged => {
+                                if self.config.search_debounce_enabled {
+                                    self.filter_state.mark_typing();
+                                }
+                            }
                             SearchAction::Install(pkg) => self.maybe_confirm_install(pkg),
                             SearchAction::Uninstall(pkg) => self.maybe_confirm_uninstall(pkg),
                             SearchAction::Update(pkg) => self.maybe_confirm_update(pkg),
@@ -393,6 +481,30 @@ impl eframe::App for BrewstyApp {
                             ServiceAction::Start(name) => self.handle_start_service(name),
                             ServiceAction::Stop(name) => self.handle_stop_service(name),
                             ServiceAction::Restart(name) => self.handle_restart_service(name),
+                            ServiceAction::ViewInfo(name) => self.handle_service_info(name),
+                            ServiceAction::ViewLog(name) => self.handle_service_log(name),
+                        }
+                    }
+                }
+
+                Tab::History => {
+                    let actions = HistoryTab::show(ui, &self.operation_history);
+
+                    for action in actions {
+                        match action {
+                            HistoryAction::Undo(request) => self.handle_undo(request),
+                            HistoryAction::ClearHistory => {
+                                if let Err(e) = self
+                                    .use_cases
+                                    .clear_history
+                                    .execute(&mut self.operation_history)
+                                {
+                                    tracing::error!("Failed to clear history: {}", e);
+                                    self.toast_manager.error("Failed to clear history");
+                                } else {
+                                    self.toast_manager.success("History cleared");
+                                }
+                            }
                         }
                     }
                 }
@@ -405,6 +517,8 @@ impl eframe::App for BrewstyApp {
                         &mut self.log_manager,
                         self.loading_export,
                         self.loading_import,
+                        self.loading_bundle_dump,
+                        self.loading_bundle_check,
                         &self.doctor_output,
                         &self.taps,
                         &mut self.new_tap_name,
@@ -424,6 +538,8 @@ impl eframe::App for BrewstyApp {
                             SettingsAction::LoadTaps => self.load_taps(),
                             SettingsAction::Tap(name) => self.handle_tap(name),
                             SettingsAction::Untap(name) => self.handle_untap(name),
+                            SettingsAction::ExportBrewfile => self.handle_bundle_dump(),
+                            SettingsAction::SyncBrewfile => self.handle_bundle_check_preview(),
                         }
                     }
                 }
@@ -454,11 +570,31 @@ impl eframe::App for BrewstyApp {
                     CleanupAction::Confirm(cleanup_type) => match cleanup_type {
                         CleanupType::Cache => self.handle_clean_cache(),
                         CleanupType::OldVersions => self.handle_cleanup_old_versions(),
+                        CleanupType::Orphans => self.handle_cleanup_orphans(),
                     },
                     CleanupAction::Cancel => {
                         self.cleanup_modal.close();
                     }
                 }
+            }
+
+            // Handle brewfile sync modal
+            if let Some(action) = self.brewfile_sync_modal.render(ctx) {
+                match action {
+                    BrewfileSyncAction::Apply { install, cleanup } => {
+                        if let Some(path) = self.current_brewfile_path.clone() {
+                            self.handle_bundle_apply(path, install, cleanup);
+                        }
+                    }
+                    BrewfileSyncAction::Cancel => {
+                        self.brewfile_sync_modal.close();
+                    }
+                }
+            }
+
+            // Handle service detail modal (info + log)
+            if let Some(log_request) = self.service_list.render_detail_modal(ctx) {
+                self.handle_service_log(log_request);
             }
 
             // Handle info modal dependency loading
@@ -537,9 +673,12 @@ impl eframe::App for BrewstyApp {
                     self.pending_operation = None;
                     self.log_manager
                         .push("Password entry cancelled.".to_string());
+                    self.toast_manager.info("Password entry cancelled");
                     tracing::info!("Password entry cancelled");
                 }
             }
         });
+
+        self.toast_manager.show(ctx);
     }
 }

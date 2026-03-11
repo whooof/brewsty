@@ -1,9 +1,8 @@
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[allow(dead_code)]
 pub enum SortField {
     Name,
-    Version,
     Type,
+    Size,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -19,6 +18,10 @@ pub struct FilterState {
     installed_search_query: String,
     sort_field: SortField,
     sort_order: SortOrder,
+
+    // For debouncing
+    last_typing_time: Option<std::time::Instant>,
+    pending_search: bool,
 }
 
 impl FilterState {
@@ -30,6 +33,8 @@ impl FilterState {
             installed_search_query: String::new(),
             sort_field: SortField::Name,
             sort_order: SortOrder::Ascending,
+            last_typing_time: None,
+            pending_search: false,
         }
     }
 
@@ -83,6 +88,23 @@ impl FilterState {
             self.sort_field = field;
             self.sort_order = SortOrder::Ascending;
         }
+    }
+
+    pub fn mark_typing(&mut self) {
+        self.last_typing_time = Some(std::time::Instant::now());
+        self.pending_search = true;
+    }
+
+    pub fn check_debounce_trigger(&mut self, delay_ms: u64) -> bool {
+        if self.pending_search {
+            if let Some(time) = self.last_typing_time {
+                if time.elapsed().as_millis() as u64 >= delay_ms {
+                    self.pending_search = false;
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 

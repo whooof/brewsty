@@ -1,4 +1,7 @@
-use crate::domain::{entities::PackageList, repositories::PackageListRepository};
+use crate::domain::{
+    entities::{PackageList, brewfile::BrewfileSyncPreview},
+    repositories::PackageListRepository,
+};
 use anyhow::{Context, Result, bail};
 use std::{path::Path, sync::Arc};
 
@@ -93,5 +96,56 @@ impl ImportPackages {
             .await?;
 
         Ok(())
+    }
+}
+
+pub struct BundleDump {
+    use_case: PackageListRepositoryUseCase,
+}
+
+impl BundleDump {
+    pub fn new(repository: Arc<dyn PackageListRepository>) -> Self {
+        Self {
+            use_case: PackageListRepositoryUseCase::new(repository),
+        }
+    }
+
+    pub async fn execute(&self, path: &str) -> Result<String> {
+        self.use_case.repository().bundle_dump(path).await
+    }
+}
+
+pub struct BundleCheckPreview {
+    use_case: PackageListRepositoryUseCase,
+}
+
+impl BundleCheckPreview {
+    pub fn new(repository: Arc<dyn PackageListRepository>) -> Self {
+        Self {
+            use_case: PackageListRepositoryUseCase::new(repository),
+        }
+    }
+
+    pub async fn execute(&self, path: &str) -> Result<BrewfileSyncPreview> {
+        self.use_case.repository().bundle_check_preview(path).await
+    }
+}
+
+pub struct BundleApply {
+    use_case: PackageListRepositoryUseCase,
+}
+
+impl BundleApply {
+    pub fn new(repository: Arc<dyn PackageListRepository>) -> Self {
+        Self {
+            use_case: PackageListRepositoryUseCase::new(repository),
+        }
+    }
+
+    pub async fn execute(&self, path: &str, install: bool, cleanup: bool) -> Result<()> {
+        self.use_case
+            .repository()
+            .bundle_apply(path, install, cleanup)
+            .await
     }
 }

@@ -139,6 +139,29 @@ impl CleanupOldVersions {
     }
 }
 
+pub struct CleanOrphans {
+    use_case: RepositoryUseCase,
+}
+
+impl CleanOrphans {
+    pub fn new(repository: Arc<dyn PackageRepository>) -> Self {
+        Self {
+            use_case: RepositoryUseCase::new(repository),
+        }
+    }
+
+    pub async fn preview(&self) -> Result<CleanupPreview> {
+        self.use_case
+            .repository()
+            .get_cleanup_orphans_preview()
+            .await
+    }
+
+    pub async fn execute(&self) -> Result<()> {
+        self.use_case.repository().clean_orphans().await
+    }
+}
+
 pub struct SearchPackages {
     use_case: RepositoryUseCase,
 }

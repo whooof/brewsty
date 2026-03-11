@@ -27,6 +27,7 @@ pub struct Package {
     pub outdated: bool,
     pub version_load_failed: bool,
     pub pinned: bool,
+    pub installed_size: Option<u64>,
 }
 
 impl Package {
@@ -41,6 +42,7 @@ impl Package {
             outdated: false,
             version_load_failed: false,
             pinned: false,
+            installed_size: None,
         }
     }
 

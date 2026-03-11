@@ -7,6 +7,8 @@ pub enum ServiceAction {
     Start(String),
     Stop(String),
     Restart(String),
+    ViewInfo(String),
+    ViewLog(String),
 }
 
 pub struct ServicesTab;
@@ -39,12 +41,16 @@ impl ServicesTab {
             let mut start_action = None;
             let mut stop_action = None;
             let mut restart_action = None;
+            let mut info_action = None;
+            let mut log_action = None;
 
             service_list.show(
                 ui,
                 &mut start_action,
                 &mut stop_action,
                 &mut restart_action,
+                &mut info_action,
+                &mut log_action,
                 services_in_operation,
             );
 
@@ -56,6 +62,12 @@ impl ServicesTab {
             }
             if let Some(service_name) = restart_action {
                 actions.push(ServiceAction::Restart(service_name));
+            }
+            if let Some(service_name) = info_action {
+                actions.push(ServiceAction::ViewInfo(service_name));
+            }
+            if let Some(service_name) = log_action {
+                actions.push(ServiceAction::ViewLog(service_name));
             }
         }
 
