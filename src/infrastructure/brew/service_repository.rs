@@ -143,6 +143,35 @@ impl BrewServiceRepository {
 
         Ok(services)
     }
+
+    fn enrich_service_command_error(name: &str, error: anyhow::Error) -> anyhow::Error {
+        let message = error.to_string();
+
+        if message.contains("launchctl bootstrap")
+            && message.contains("exited with 5")
+            && message.contains("Input/output error")
+        {
+            return anyhow!(
+                "Failed to start service '{}': launchctl bootstrap returned exit code 5.\n\
+This usually means the LaunchAgent is in a bad state, the plist is invalid, or macOS refused to load it.\n\
+Try:\n\
+1. brew services stop {}\n\
+2. launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/homebrew.mxcl.{}.plist\n\
+3. plutil -lint ~/Library/LaunchAgents/homebrew.mxcl.{}.plist\n\
+4. brew services start {}\n\
+If it still fails, inspect the live state with:\n\
+launchctl print gui/$(id -u)/homebrew.mxcl.{}",
+                name,
+                name,
+                name,
+                name,
+                name,
+                name
+            );
+        }
+
+        error
+    }
 }
 
 #[async_trait]
@@ -165,8 +194,15 @@ impl ServiceRepository for BrewServiceRepository {
 
     async fn start_service(&self, name: &str) -> Result<()> {
         let name = name.to_string();
-        let output =
-            tokio::task::spawn_blocking(move || BrewCommand::start_service(&name)).await??;
+        let output = match tokio::task::spawn_blocking({
+            let name = name.clone();
+            move || BrewCommand::start_service(&name)
+        })
+        .await?
+        {
+            Ok(output) => output,
+            Err(error) => return Err(Self::enrich_service_command_error(&name, error)),
+        };
 
         if !output.stdout.is_empty() {
             tracing::info!("start_service output: {}", output.stdout);
@@ -195,8 +231,15 @@ impl ServiceRepository for BrewServiceRepository {
 
     async fn restart_service(&self, name: &str) -> Result<()> {
         let name = name.to_string();
-        let output =
-            tokio::task::spawn_blocking(move || BrewCommand::restart_service(&name)).await??;
+        let output = match tokio::task::spawn_blocking({
+            let name = name.clone();
+            move || BrewCommand::restart_service(&name)
+        })
+        .await?
+        {
+            Ok(output) => output,
+            Err(error) => return Err(Self::enrich_service_command_error(&name, error)),
+        };
 
         if !output.stdout.is_empty() {
             tracing::info!("restart_service output: {}", output.stdout);
@@ -232,6 +275,22 @@ impl ServiceRepository for BrewServiceRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn enriches_launchctl_bootstrap_exit_5_error() {
+        let error = anyhow!(
+            "Brew command failed: Bootstrap failed: 5: Input/output error\n\
+Try re-running the command as root for richer errors.\n\
+Error: Failure while executing; `/bin/launchctl bootstrap gui/501 /Users/test/Library/LaunchAgents/homebrew.mxcl.caddy.plist` exited with 5."
+        );
+
+        let enriched = BrewServiceRepository::enrich_service_command_error("caddy", error);
+        let message = enriched.to_string();
+
+        assert!(message.contains("launchctl bootstrap returned exit code 5"));
+        assert!(message.contains("launchctl bootout gui/$(id -u)"));
+        assert!(message.contains("plutil -lint"));
+    }
 
     #[test]
     fn parse_services_json_basic() {

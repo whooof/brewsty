@@ -3,6 +3,15 @@ use crate::domain::entities::history::{OperationHistory, OperationRecord, Operat
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
 
+const TABLE_CELL_H_PADDING: f32 = 8.0;
+const TABLE_ROW_PADDING: f32 = 14.0;
+
+fn padded_cell(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
+    ui.add_space(TABLE_CELL_H_PADDING);
+    add_contents(ui);
+    ui.add_space(TABLE_CELL_H_PADDING);
+}
+
 pub enum HistoryAction {
     Undo(UndoRequest),
     ClearHistory,
@@ -47,7 +56,7 @@ impl HistoryTab {
         }
 
         let text_height = ui.text_style_height(&egui::TextStyle::Body);
-        let row_height = text_height + 8.0;
+        let row_height = text_height + TABLE_ROW_PADDING;
 
         TableBuilder::new(ui)
             .id_salt("history_table")
@@ -63,25 +72,39 @@ impl HistoryTab {
             .column(Column::remainder().at_least(50.0)) // Undo
             .header(row_height, |mut header| {
                 header.col(|ui| {
-                    ui.strong("");
+                    padded_cell(ui, |ui| {
+                        ui.strong("");
+                    })
                 });
                 header.col(|ui| {
-                    ui.strong("");
+                    padded_cell(ui, |ui| {
+                        ui.strong("");
+                    })
                 });
                 header.col(|ui| {
-                    ui.strong("Time");
+                    padded_cell(ui, |ui| {
+                        ui.strong("Time");
+                    })
                 });
                 header.col(|ui| {
-                    ui.strong("Operation");
+                    padded_cell(ui, |ui| {
+                        ui.strong("Operation");
+                    })
                 });
                 header.col(|ui| {
-                    ui.strong("Target");
+                    padded_cell(ui, |ui| {
+                        ui.strong("Target");
+                    })
                 });
                 header.col(|ui| {
-                    ui.strong("Type");
+                    padded_cell(ui, |ui| {
+                        ui.strong("Type");
+                    })
                 });
                 header.col(|ui| {
-                    ui.strong("Undo");
+                    padded_cell(ui, |ui| {
+                        ui.strong("Undo");
+                    })
                 });
             })
             .body(|body| {
@@ -90,52 +113,68 @@ impl HistoryTab {
                     let record = &history.records[idx];
 
                     row.col(|ui| {
-                        ui.label(record.status_icon());
+                        padded_cell(ui, |ui| {
+                            ui.label(record.status_icon());
+                        })
                     });
                     row.col(|ui| {
-                        ui.label(record.icon());
+                        padded_cell(ui, |ui| {
+                            ui.label(record.icon());
+                        })
                     });
                     row.col(|ui| {
-                        ui.label(record.timestamp.format("%Y-%m-%d %H:%M:%S").to_string());
+                        padded_cell(ui, |ui| {
+                            ui.label(record.timestamp.format("%Y-%m-%d %H:%M:%S").to_string());
+                        })
                     });
                     row.col(|ui| {
-                        let color = operation_color(record);
-                        ui.label(egui::RichText::new(record.operation.to_string()).color(color));
+                        padded_cell(ui, |ui| {
+                            let color = operation_color(record);
+                            ui.label(
+                                egui::RichText::new(record.operation.to_string()).color(color),
+                            );
+                        })
                     });
                     row.col(|ui| {
-                        let target_text = record.target.as_deref().unwrap_or("-");
-                        let label = if let Some(detail) = &record.detail {
-                            format!("{target_text} ({detail})")
-                        } else {
-                            target_text.to_string()
-                        };
-                        ui.label(&label).on_hover_text(&label);
+                        padded_cell(ui, |ui| {
+                            let target_text = record.target.as_deref().unwrap_or("-");
+                            let label = if let Some(detail) = &record.detail {
+                                format!("{target_text} ({detail})")
+                            } else {
+                                target_text.to_string()
+                            };
+                            ui.label(&label).on_hover_text(&label);
+                        })
                     });
                     row.col(|ui| {
-                        if let Some(pt) = &record.package_type {
-                            ui.label(pt.to_string());
-                        } else {
-                            ui.label("-");
-                        }
+                        padded_cell(ui, |ui| {
+                            if let Some(pt) = &record.package_type {
+                                ui.label(pt.to_string());
+                            } else {
+                                ui.label("-");
+                            }
+                        })
                     });
                     row.col(|ui| {
-                        if record.is_undoable() {
-                            if ui
-                                .button("\u{21A9}")
-                                .on_hover_text("Undo this operation")
-                                .clicked()
-                            {
-                                if let Some(reverse) = record.operation.reverse() {
-                                    if let Some(target) = &record.target {
-                                        actions.push(HistoryAction::Undo(UndoRequest {
-                                            reverse_operation: reverse,
-                                            target: target.clone(),
-                                            package_type: record.package_type,
-                                        }));
+                        padded_cell(ui, |ui| {
+                            if record.is_undoable() {
+                                if ui
+                                    .button("\u{21A9}")
+                                    .on_hover_text("Undo this operation")
+                                    .clicked()
+                                {
+                                    if let Some(reverse) = record.operation.reverse() {
+                                        if let Some(target) = &record.target {
+                                            actions.push(HistoryAction::Undo(UndoRequest {
+                                                reverse_operation: reverse,
+                                                target: target.clone(),
+                                                package_type: record.package_type,
+                                            }));
+                                        }
                                     }
                                 }
                             }
-                        }
+                        })
                     });
                 });
             });

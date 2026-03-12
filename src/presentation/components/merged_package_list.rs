@@ -4,6 +4,16 @@ use crate::presentation::components::filter_state::{SortField, SortOrder};
 use egui::{Color32, RichText, ScrollArea};
 use egui_extras::{Column, TableBuilder};
 
+const TABLE_CELL_H_PADDING: f32 = 8.0;
+const TABLE_ROW_PADDING: f32 = 14.0;
+const TABLE_HEADER_HEIGHT: f32 = 28.0;
+
+fn padded_cell(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
+    ui.add_space(TABLE_CELL_H_PADDING);
+    add_contents(ui);
+    ui.add_space(TABLE_CELL_H_PADDING);
+}
+
 pub struct MergedPackageList {
     packages: Vec<Package>,
     outdated_packages: Vec<Package>,
@@ -163,25 +173,37 @@ impl MergedPackageList {
                         .column(Column::initial(80.0).resizable(true)) // Size
                         .column(Column::initial(100.0).resizable(true)) // Status
                         .column(Column::remainder().at_least(120.0)) // Actions
-                        .header(20.0, |mut header| {
-                            header.col(|_ui| {});
+                        .header(TABLE_HEADER_HEIGHT, |mut header| {
+                            header.col(|ui| padded_cell(ui, |_ui| {}));
                             header.col(|ui| {
-                                ui.strong("Name");
+                                padded_cell(ui, |ui| {
+                                    ui.strong("Name");
+                                })
                             });
                             header.col(|ui| {
-                                ui.strong("Version");
+                                padded_cell(ui, |ui| {
+                                    ui.strong("Version");
+                                })
                             });
                             header.col(|ui| {
-                                ui.strong("Type");
+                                padded_cell(ui, |ui| {
+                                    ui.strong("Type");
+                                })
                             });
                             header.col(|ui| {
-                                ui.strong("Size");
+                                padded_cell(ui, |ui| {
+                                    ui.strong("Size");
+                                })
                             });
                             header.col(|ui| {
-                                ui.strong("Status");
+                                padded_cell(ui, |ui| {
+                                    ui.strong("Status");
+                                })
                             });
                             header.col(|ui| {
-                                ui.strong("Actions");
+                                padded_cell(ui, |ui| {
+                                    ui.strong("Actions");
+                                })
                             });
                         })
                         .body(|mut body| {
@@ -201,115 +223,145 @@ impl MergedPackageList {
                                     continue;
                                 }
 
-                                let row_height = text_height + 8.0;
+                                let row_height = text_height + TABLE_ROW_PADDING;
 
                                 body.row(row_height, |mut row| {
                                     row.col(|ui| {
-                                        let mut is_selected =
-                                            self.outdated_selection.is_selected(&package.name);
-                                        if ui.checkbox(&mut is_selected, "").changed() {
-                                            if is_selected {
-                                                self.outdated_selection
-                                                    .select(package.name.clone());
-                                            } else {
-                                                self.outdated_selection.deselect(&package.name);
-                                            }
-                                        }
-                                    });
-
-                                    row.col(|ui| {
-                                        ui.label(&package.name);
-                                    });
-
-                                    row.col(|ui| {
-                                        let version_text = if package.version_load_failed {
-                                            "Failed".to_string()
-                                        } else if let Some(av) = &package.available_version {
-                                            format!(
-                                                "{} -> {}",
-                                                package.version.as_deref().unwrap_or("N/A"),
-                                                av
-                                            )
-                                        } else {
-                                            package.version.as_deref().unwrap_or("N/A").to_string()
-                                        };
-
-                                        if packages_loading_info.contains(&package.name) {
-                                            ui.spinner();
-                                        } else if package.version_load_failed {
-                                            ui.label(
-                                                RichText::new(version_text)
-                                                    .color(Color32::from_rgb(255, 0, 0)),
-                                            );
-                                        } else if package.pinned {
-                                            ui.label(
-                                                RichText::new(version_text)
-                                                    .color(Color32::from_rgb(255, 200, 0)),
-                                            );
-                                        } else {
-                                            ui.label(version_text);
-                                        }
-                                    });
-
-                                    row.col(|ui| {
-                                        let type_str = match package.package_type {
-                                            PackageType::Formula => "📦 Formula",
-                                            PackageType::Cask => "Cask",
-                                        };
-                                        ui.label(type_str);
-                                    });
-
-                                    row.col(|ui| {
-                                        if let Some(size) = package.installed_size {
-                                            ui.label(crate::presentation::ui::app::format_size(
-                                                size,
-                                            ));
-                                        } else {
-                                            ui.label("-");
-                                        }
-                                    });
-
-                                    row.col(|ui| {
-                                        let is_operating =
-                                            packages_loading_info.contains(&package.name);
-                                        let status_text = if package.pinned {
-                                            RichText::new("📌 Pinned")
-                                                .color(Color32::from_rgb(255, 200, 0))
-                                        } else {
-                                            RichText::new("⚠ Outdated")
-                                                .color(Color32::from_rgb(255, 165, 0))
-                                        };
-
-                                        if is_operating {
-                                            ui.spinner();
-                                        } else {
-                                            ui.label(status_text);
-                                        }
-                                    });
-
-                                    row.col(|ui| {
-                                        ui.horizontal(|ui| {
-                                            if !package.pinned
-                                                && ui.button("🔄").on_hover_text("Update").clicked()
-                                            {
-                                                *on_update = Some(package.clone());
-                                            }
-                                            if package.pinned {
-                                                if ui.button("🔓").on_hover_text("Unpin").clicked()
-                                                {
-                                                    *on_unpin = Some(package.clone());
+                                        padded_cell(ui, |ui| {
+                                            let mut is_selected =
+                                                self.outdated_selection.is_selected(&package.name);
+                                            if ui.checkbox(&mut is_selected, "").changed() {
+                                                if is_selected {
+                                                    self.outdated_selection
+                                                        .select(package.name.clone());
+                                                } else {
+                                                    self.outdated_selection.deselect(&package.name);
                                                 }
-                                            } else if ui.button("📌").on_hover_text("Pin").clicked()
-                                            {
-                                                *on_pin = Some(package.clone());
                                             }
+                                        })
+                                    });
 
-                                            if package.description.is_some()
-                                                && ui.button("ℹ").on_hover_text("Info").clicked()
-                                            {
-                                                self.show_info_action = Some(package.clone());
+                                    row.col(|ui| {
+                                        padded_cell(ui, |ui| {
+                                            ui.label(&package.name);
+                                        })
+                                    });
+
+                                    row.col(|ui| {
+                                        padded_cell(ui, |ui| {
+                                            let version_text = if package.version_load_failed {
+                                                "Failed".to_string()
+                                            } else if let Some(av) = &package.available_version {
+                                                format!(
+                                                    "{} -> {}",
+                                                    package.version.as_deref().unwrap_or("N/A"),
+                                                    av
+                                                )
+                                            } else {
+                                                package
+                                                    .version
+                                                    .as_deref()
+                                                    .unwrap_or("N/A")
+                                                    .to_string()
+                                            };
+
+                                            if packages_loading_info.contains(&package.name) {
+                                                ui.spinner();
+                                            } else if package.version_load_failed {
+                                                ui.label(
+                                                    RichText::new(version_text)
+                                                        .color(Color32::from_rgb(255, 0, 0)),
+                                                );
+                                            } else if package.pinned {
+                                                ui.label(
+                                                    RichText::new(version_text)
+                                                        .color(Color32::from_rgb(255, 200, 0)),
+                                                );
+                                            } else {
+                                                ui.label(version_text);
                                             }
-                                        });
+                                        })
+                                    });
+
+                                    row.col(|ui| {
+                                        padded_cell(ui, |ui| {
+                                            let type_str = match package.package_type {
+                                                PackageType::Formula => "📦 Formula",
+                                                PackageType::Cask => "Cask",
+                                            };
+                                            ui.label(type_str);
+                                        })
+                                    });
+
+                                    row.col(|ui| {
+                                        padded_cell(ui, |ui| {
+                                            if let Some(size) = package.installed_size {
+                                                ui.label(
+                                                    crate::presentation::ui::app::format_size(size),
+                                                );
+                                            } else {
+                                                ui.label("-");
+                                            }
+                                        })
+                                    });
+
+                                    row.col(|ui| {
+                                        padded_cell(ui, |ui| {
+                                            let is_operating =
+                                                packages_loading_info.contains(&package.name);
+                                            let status_text = if package.pinned {
+                                                RichText::new("📌 Pinned")
+                                                    .color(Color32::from_rgb(255, 200, 0))
+                                            } else {
+                                                RichText::new("⚠ Outdated")
+                                                    .color(Color32::from_rgb(255, 165, 0))
+                                            };
+
+                                            if is_operating {
+                                                ui.spinner();
+                                            } else {
+                                                ui.label(status_text);
+                                            }
+                                        })
+                                    });
+
+                                    row.col(|ui| {
+                                        padded_cell(ui, |ui| {
+                                            ui.horizontal(|ui| {
+                                                if !package.pinned
+                                                    && ui
+                                                        .button("🔄")
+                                                        .on_hover_text("Update")
+                                                        .clicked()
+                                                {
+                                                    *on_update = Some(package.clone());
+                                                }
+                                                if package.pinned {
+                                                    if ui
+                                                        .button("🔓")
+                                                        .on_hover_text("Unpin")
+                                                        .clicked()
+                                                    {
+                                                        *on_unpin = Some(package.clone());
+                                                    }
+                                                } else if ui
+                                                    .button("📌")
+                                                    .on_hover_text("Pin")
+                                                    .clicked()
+                                                {
+                                                    *on_pin = Some(package.clone());
+                                                }
+
+                                                if package.description.is_some()
+                                                    && ui
+                                                        .button("ℹ")
+                                                        .on_hover_text("Info")
+                                                        .clicked()
+                                                {
+                                                    self.show_info_action = Some(package.clone());
+                                                }
+                                            });
+                                        })
                                     });
                                 });
                             }
@@ -354,24 +406,36 @@ impl MergedPackageList {
                         .column(Column::initial(80.0).resizable(true)) // Size
                         .column(Column::initial(100.0).resizable(true)) // Status
                         .column(Column::remainder().at_least(120.0)) // Actions
-                        .header(20.0, |mut header| {
+                        .header(TABLE_HEADER_HEIGHT, |mut header| {
                             header.col(|ui| {
-                                ui.strong("Name");
+                                padded_cell(ui, |ui| {
+                                    ui.strong("Name");
+                                })
                             });
                             header.col(|ui| {
-                                ui.strong("Version");
+                                padded_cell(ui, |ui| {
+                                    ui.strong("Version");
+                                })
                             });
                             header.col(|ui| {
-                                ui.strong("Type");
+                                padded_cell(ui, |ui| {
+                                    ui.strong("Type");
+                                })
                             });
                             header.col(|ui| {
-                                ui.strong("Size");
+                                padded_cell(ui, |ui| {
+                                    ui.strong("Size");
+                                })
                             });
                             header.col(|ui| {
-                                ui.strong("Status");
+                                padded_cell(ui, |ui| {
+                                    ui.strong("Status");
+                                })
                             });
                             header.col(|ui| {
-                                ui.strong("Actions");
+                                padded_cell(ui, |ui| {
+                                    ui.strong("Actions");
+                                })
                             });
                         })
                         .body(|mut body| {
@@ -391,114 +455,137 @@ impl MergedPackageList {
                                     continue;
                                 }
 
-                                let row_height = text_height + 8.0;
+                                let row_height = text_height + TABLE_ROW_PADDING;
 
                                 body.row(row_height, |mut row| {
                                     row.col(|ui| {
-                                        let is_selected =
-                                            self.selected_package.as_ref() == Some(&package.name);
+                                        padded_cell(ui, |ui| {
+                                            let is_selected = self.selected_package.as_ref()
+                                                == Some(&package.name);
 
-                                        if ui.selectable_label(is_selected, &package.name).clicked()
-                                        {
-                                            self.selected_package = Some(package.name.clone());
-                                        }
-                                    });
-
-                                    row.col(|ui| {
-                                        let version_text =
-                                            package.version.as_deref().unwrap_or("N/A");
-
-                                        if packages_loading_info.contains(&package.name) {
-                                            ui.spinner();
-                                        } else if package.version_load_failed {
-                                            ui.label(
-                                                RichText::new(version_text)
-                                                    .color(Color32::from_rgb(255, 0, 0)),
-                                            );
-                                        } else if package.pinned {
-                                            ui.label(
-                                                RichText::new(version_text)
-                                                    .color(Color32::from_rgb(255, 200, 0)),
-                                            );
-                                        } else {
-                                            ui.label(version_text);
-                                        }
-                                    });
-
-                                    row.col(|ui| {
-                                        let type_str = match package.package_type {
-                                            PackageType::Formula => "📦 Formula",
-                                            PackageType::Cask => "Cask",
-                                        };
-                                        ui.label(type_str);
-                                    });
-
-                                    row.col(|ui| {
-                                        if let Some(size) = package.installed_size {
-                                            ui.label(crate::presentation::ui::app::format_size(
-                                                size,
-                                            ));
-                                        } else {
-                                            ui.label("-");
-                                        }
-                                    });
-
-                                    row.col(|ui| {
-                                        let is_operating =
-                                            packages_loading_info.contains(&package.name);
-                                        let status_text = if package.pinned {
-                                            RichText::new("📌 Pinned")
-                                                .color(Color32::from_rgb(255, 200, 0))
-                                        } else {
-                                            RichText::new("Installed")
-                                                .color(Color32::from_rgb(0, 255, 0))
-                                        };
-
-                                        if is_operating {
-                                            ui.spinner();
-                                        } else {
-                                            ui.label(status_text);
-                                        }
-                                    });
-
-                                    row.col(|ui| {
-                                        ui.horizontal(|ui| {
-                                            if ui.button("X").on_hover_text("Uninstall").clicked() {
-                                                *on_uninstall = Some(package.clone());
-                                            }
-                                            if matches!(package.package_type, PackageType::Formula)
+                                            if ui
+                                                .selectable_label(is_selected, &package.name)
+                                                .clicked()
                                             {
-                                                if package.pinned {
-                                                    if ui
-                                                        .button("🔓")
-                                                        .on_hover_text("Unpin")
+                                                self.selected_package = Some(package.name.clone());
+                                            }
+                                        })
+                                    });
+
+                                    row.col(|ui| {
+                                        padded_cell(ui, |ui| {
+                                            let version_text =
+                                                package.version.as_deref().unwrap_or("N/A");
+
+                                            if packages_loading_info.contains(&package.name) {
+                                                ui.spinner();
+                                            } else if package.version_load_failed {
+                                                ui.label(
+                                                    RichText::new(version_text)
+                                                        .color(Color32::from_rgb(255, 0, 0)),
+                                                );
+                                            } else if package.pinned {
+                                                ui.label(
+                                                    RichText::new(version_text)
+                                                        .color(Color32::from_rgb(255, 200, 0)),
+                                                );
+                                            } else {
+                                                ui.label(version_text);
+                                            }
+                                        })
+                                    });
+
+                                    row.col(|ui| {
+                                        padded_cell(ui, |ui| {
+                                            let type_str = match package.package_type {
+                                                PackageType::Formula => "📦 Formula",
+                                                PackageType::Cask => "Cask",
+                                            };
+                                            ui.label(type_str);
+                                        })
+                                    });
+
+                                    row.col(|ui| {
+                                        padded_cell(ui, |ui| {
+                                            if let Some(size) = package.installed_size {
+                                                ui.label(
+                                                    crate::presentation::ui::app::format_size(size),
+                                                );
+                                            } else {
+                                                ui.label("-");
+                                            }
+                                        })
+                                    });
+
+                                    row.col(|ui| {
+                                        padded_cell(ui, |ui| {
+                                            let is_operating =
+                                                packages_loading_info.contains(&package.name);
+                                            let status_text = if package.pinned {
+                                                RichText::new("📌 Pinned")
+                                                    .color(Color32::from_rgb(255, 200, 0))
+                                            } else {
+                                                RichText::new("Installed")
+                                                    .color(Color32::from_rgb(0, 255, 0))
+                                            };
+
+                                            if is_operating {
+                                                ui.spinner();
+                                            } else {
+                                                ui.label(status_text);
+                                            }
+                                        })
+                                    });
+
+                                    row.col(|ui| {
+                                        padded_cell(ui, |ui| {
+                                            ui.horizontal(|ui| {
+                                                if ui
+                                                    .button("X")
+                                                    .on_hover_text("Uninstall")
+                                                    .clicked()
+                                                {
+                                                    *on_uninstall = Some(package.clone());
+                                                }
+                                                if matches!(
+                                                    package.package_type,
+                                                    PackageType::Formula
+                                                ) {
+                                                    if package.pinned {
+                                                        if ui
+                                                            .button("🔓")
+                                                            .on_hover_text("Unpin")
+                                                            .clicked()
+                                                        {
+                                                            *on_unpin = Some(package.clone());
+                                                        }
+                                                    } else if ui
+                                                        .button("📌")
+                                                        .on_hover_text("Pin")
                                                         .clicked()
                                                     {
-                                                        *on_unpin = Some(package.clone());
+                                                        *on_pin = Some(package.clone());
                                                     }
-                                                } else if ui
-                                                    .button("📌")
-                                                    .on_hover_text("Pin")
-                                                    .clicked()
-                                                {
-                                                    *on_pin = Some(package.clone());
                                                 }
-                                            }
 
-                                            if package.version.is_none() {
-                                                if ui
-                                                    .button("⏳")
-                                                    .on_hover_text("Load Info")
-                                                    .clicked()
+                                                if package.version.is_none() {
+                                                    if ui
+                                                        .button("⏳")
+                                                        .on_hover_text("Load Info")
+                                                        .clicked()
+                                                    {
+                                                        *on_load_info = Some(package.clone());
+                                                    }
+                                                } else if package.description.is_some()
+                                                    && ui
+                                                        .button("ℹ")
+                                                        .on_hover_text("Info")
+                                                        .clicked()
                                                 {
-                                                    *on_load_info = Some(package.clone());
+                                                    self.show_info_action = Some(package.clone());
                                                 }
-                                            } else if package.description.is_some()
-                                                && ui.button("ℹ").on_hover_text("Info").clicked()
-                                            {
-                                                self.show_info_action = Some(package.clone());
-                                            }
-                                        });
+                                            });
+                                        })
                                     });
                                 });
                             }

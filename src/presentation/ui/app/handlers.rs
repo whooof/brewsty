@@ -5,7 +5,7 @@ use crate::presentation::services::{AsyncTask, TaskSharedState};
 use crate::presentation::ui::tabs::history::UndoRequest;
 use std::sync::{Arc, Mutex};
 
-use super::{BrewstyApp, PendingOperation};
+use super::BrewstyApp;
 
 impl BrewstyApp {
     pub(super) fn maybe_confirm_install(&mut self, package: Package) {
@@ -316,28 +316,8 @@ impl BrewstyApp {
         self.handle_update(package);
     }
 
-    pub(super) fn is_password_error(&self, error_msg: &str) -> bool {
-        error_msg.contains("authentication failure")
-            || error_msg.contains("sudo")
-            || error_msg.contains("password")
-            || error_msg.contains("Permission denied")
-            || error_msg.contains("Incorrect password")
-            || error_msg.contains("incorrect password attempt")
-            || error_msg.contains("sorry, try again")
-            || error_msg.contains("sudo: a password is required")
-    }
-
-    pub(super) fn retry_with_password(&mut self, password: &str) {
-        if let Some(operation) = self.pending_operation.take() {
-            match operation {
-                PendingOperation::Install(package) => {
-                    self.handle_install_with_password(package, password.to_string());
-                }
-                PendingOperation::Uninstall(package) => {
-                    self.handle_uninstall_with_password(package, password.to_string());
-                }
-            }
-        }
+    pub(super) fn is_auth_cancelled(&self, error_msg: &str) -> bool {
+        error_msg.contains("Password prompt was cancelled")
     }
 
     pub(super) fn handle_install(&mut self, package: Package) {
@@ -377,55 +357,6 @@ impl BrewstyApp {
         });
     }
 
-    fn handle_install_with_password(&mut self, package: Package, password: String) {
-        if self.loading_install {
-            return;
-        }
-
-        let package_name = package.name.clone();
-        self.loading_install = true;
-        self.loading = true;
-        self.current_install_package = Some(package_name.clone());
-        self.status_message = format!("Installing {} (with password)...", package.name);
-
-        let initial_msg = format!(
-            "Retrying install with password: {} ({:?})",
-            package_name, package.package_type
-        );
-        self.log_manager.push(initial_msg.clone());
-        tracing::info!("{}", initial_msg);
-
-        let shared = TaskSharedState::new();
-
-        self.task_manager.set_active_task(AsyncTask::Install {
-            success: Arc::clone(&shared.success),
-            logs: Arc::clone(&shared.logs),
-            message: Arc::clone(&shared.message),
-        });
-
-        let pkg_type = package.package_type;
-
-        self.executor.spawn(async move {
-            use crate::infrastructure::brew::command::BrewCommand;
-
-            let name = package_name.clone();
-            let brew_result = tokio::task::spawn_blocking(move || {
-                BrewCommand::install_package_with_password(&name, pkg_type, &password)
-            })
-            .await;
-
-            let result = match brew_result {
-                Ok(inner) => inner,
-                Err(e) => Err(anyhow::anyhow!("Task join error: {}", e)),
-            };
-
-            match result {
-                Ok(_) => shared.set_success(format!("Successfully installed {}", package_name)),
-                Err(e) => shared.set_failure(format!("Error installing {}: {}", package_name, e)),
-            }
-        });
-    }
-
     pub(super) fn handle_uninstall(&mut self, package: Package) {
         if self.loading_uninstall {
             return;
@@ -457,55 +388,6 @@ impl BrewstyApp {
 
         self.executor.spawn(async move {
             match use_case.execute(package).await {
-                Ok(_) => shared.set_success(format!("Successfully uninstalled {}", package_name)),
-                Err(e) => shared.set_failure(format!("Error uninstalling {}: {}", package_name, e)),
-            }
-        });
-    }
-
-    fn handle_uninstall_with_password(&mut self, package: Package, password: String) {
-        if self.loading_uninstall {
-            return;
-        }
-
-        let package_name = package.name.clone();
-        self.loading_uninstall = true;
-        self.loading = true;
-        self.current_uninstall_package = Some(package_name.clone());
-        self.status_message = format!("Uninstalling {} (with password)...", package.name);
-
-        let initial_msg = format!(
-            "Retrying uninstall with password: {} ({:?})",
-            package_name, package.package_type
-        );
-        self.log_manager.push(initial_msg.clone());
-        tracing::info!("{}", initial_msg);
-
-        let shared = TaskSharedState::new();
-
-        self.task_manager.set_active_task(AsyncTask::Uninstall {
-            success: Arc::clone(&shared.success),
-            logs: Arc::clone(&shared.logs),
-            message: Arc::clone(&shared.message),
-        });
-
-        let pkg_type = package.package_type;
-
-        self.executor.spawn(async move {
-            use crate::infrastructure::brew::command::BrewCommand;
-
-            let name = package_name.clone();
-            let brew_result = tokio::task::spawn_blocking(move || {
-                BrewCommand::uninstall_package_with_password(&name, pkg_type, &password)
-            })
-            .await;
-
-            let result = match brew_result {
-                Ok(inner) => inner,
-                Err(e) => Err(anyhow::anyhow!("Task join error: {}", e)),
-            };
-
-            match result {
                 Ok(_) => shared.set_success(format!("Successfully uninstalled {}", package_name)),
                 Err(e) => shared.set_failure(format!("Error uninstalling {}: {}", package_name, e)),
             }

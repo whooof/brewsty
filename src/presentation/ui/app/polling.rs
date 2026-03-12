@@ -1,8 +1,8 @@
 use crate::domain::entities::OperationType;
 use crate::presentation::components::Tab;
 
+use super::BrewstyApp;
 use super::format_size;
-use super::{BrewstyApp, PendingOperation};
 
 impl BrewstyApp {
     pub(super) fn poll_async_tasks(&mut self) {
@@ -117,13 +117,9 @@ impl BrewstyApp {
                         .remove_from_outdated_selection_by_name(&pkg_name);
                 }
                 self.current_install_package = None;
-            } else if self.is_password_error(&message) {
-                if let Some(pkg_name) = &installed_pkg_name
-                    && let Some(pkg) = self.search_results.get_package(pkg_name)
-                {
-                    self.pending_operation = Some(PendingOperation::Install(pkg));
-                    self.password_modal.show(format!("Install {}", pkg_name));
-                }
+            } else if self.is_auth_cancelled(&message) {
+                self.toast_manager.info("Password prompt cancelled");
+                self.current_install_package = None;
             } else {
                 self.toast_manager.error(message.clone());
                 self.current_install_package = None;
@@ -162,13 +158,9 @@ impl BrewstyApp {
                     self.merged_packages.remove_installed_package(pkg);
                 }
                 self.current_uninstall_package = None;
-            } else if self.is_password_error(&message) {
-                if let Some(pkg_name) = &uninstall_pkg_name
-                    && let Some(pkg) = self.merged_packages.get_package(pkg_name)
-                {
-                    self.pending_operation = Some(PendingOperation::Uninstall(pkg));
-                    self.password_modal.show(format!("Uninstall {}", pkg_name));
-                }
+            } else if self.is_auth_cancelled(&message) {
+                self.toast_manager.info("Password prompt cancelled");
+                self.current_uninstall_package = None;
             } else {
                 self.toast_manager.error(message.clone());
                 self.current_uninstall_package = None;

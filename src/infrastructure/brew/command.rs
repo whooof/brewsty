@@ -1,6 +1,11 @@
 use crate::domain::entities::PackageType;
 use anyhow::{Result, anyhow};
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct BrewOutput {
     pub stdout: String,
@@ -9,7 +14,81 @@ pub struct BrewOutput {
 
 pub struct BrewCommand;
 
+struct TempAskpassHelper {
+    dir_path: PathBuf,
+    script_path: PathBuf,
+}
+
+impl TempAskpassHelper {
+    fn create(prompt: &str) -> Result<Self> {
+        let unique_id = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        let dir_path = std::env::temp_dir().join(format!(
+            "brewsty-askpass-{}-{unique_id}",
+            std::process::id()
+        ));
+        fs::create_dir(&dir_path)?;
+        fs::set_permissions(&dir_path, fs::Permissions::from_mode(0o700))?;
+
+        let script_path = dir_path.join("askpass.sh");
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .mode(0o700)
+            .open(&script_path)?;
+        file.write_all(Self::script_contents(prompt).as_bytes())?;
+        file.sync_all()?;
+
+        Ok(Self {
+            dir_path,
+            script_path,
+        })
+    }
+
+    fn path(&self) -> &std::path::Path {
+        &self.script_path
+    }
+
+    fn escape_applescript_string(value: &str) -> String {
+        value.replace('\\', "\\\\").replace('"', "\\\"")
+    }
+
+    fn script_contents(prompt: &str) -> String {
+        let escaped_prompt = Self::escape_applescript_string(prompt);
+
+        format!(
+            r#"#!/bin/sh
+set -eu
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+exec /usr/bin/osascript <<'APPLESCRIPT'
+try
+    set promptText to "{escaped_prompt}"
+    set passwordText to text returned of (display dialog promptText with title "Brewsty" default answer "" with hidden answer buttons {{"Cancel", "OK"}} default button "OK")
+    return passwordText
+on error number -128
+    error "Password prompt cancelled" number 1
+end try
+APPLESCRIPT
+"#
+        )
+    }
+}
+
+impl Drop for TempAskpassHelper {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.script_path);
+        let _ = fs::remove_dir(&self.dir_path);
+    }
+}
+
 impl BrewCommand {
+    fn password_prompt(action: &str) -> String {
+        format!("Brewsty needs your administrator password to {action}.")
+    }
+
     fn get_package_type_arg(package_type: PackageType) -> &'static str {
         match package_type {
             PackageType::Formula => "--formula",
@@ -30,18 +109,17 @@ impl BrewCommand {
         Ok(String::from_utf8(output.stdout)?)
     }
 
-    fn execute_brew_with_output(args: &[&str]) -> Result<BrewOutput> {
-        // Run brew directly. When brew needs elevation, it will call sudo internally.
-        // By setting SUDO_ASKPASS to a nonexistent script and setting SUDO_ASKPASS_REQUIRE=force,
-        // we tell sudo to NOT prompt the terminal, but instead try to run that script.
-        // When the script doesn't exist, sudo fails with an error we can detect.
+    fn execute_brew_with_output(args: &[&str], prompt: &str) -> Result<BrewOutput> {
+        let askpass = TempAskpassHelper::create(prompt)
+            .map_err(|error| anyhow!("Failed to create secure askpass helper: {}", error))?;
 
-        tracing::debug!("Executing brew command with SUDO_ASKPASS to prevent terminal prompts");
+        tracing::debug!("Executing brew command with secure macOS askpass helper");
 
         let output = Command::new("brew")
             .args(args)
-            .env("SUDO_ASKPASS", "/nonexistent/askpass") // Force sudo to not use terminal
+            .env("SUDO_ASKPASS", askpass.path())
             .env("SUDO_ASKPASS_REQUIRE", "force")
+            .env("SUDO_PROMPT", prompt)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()?;
@@ -50,51 +128,18 @@ impl BrewCommand {
         let stderr = String::from_utf8(output.stderr)?;
 
         if !output.status.success() {
-            // Check if this failed due to needing a password
             let combined = format!("{} {}", stdout, stderr).to_lowercase();
 
-            if combined.contains("password")
-                || combined.contains("sudo")
-                || combined.contains("permission denied")
-                || combined.contains("authentication")
-                || combined.contains("privilege")
+            if combined.contains("password prompt cancelled")
+                || combined.contains("no password was provided")
+                || combined.contains("user canceled")
+                || combined.contains("user cancelled")
             {
-                // This is a password/privilege error
-                tracing::debug!("Password/privilege required - will show modal");
-                return Err(anyhow!("a password is required"));
+                return Err(anyhow!("Password prompt was cancelled"));
             }
-            return Err(anyhow!("Brew command failed: {}", stderr));
-        }
-
-        Ok(BrewOutput { stdout, stderr })
-    }
-
-    fn execute_brew_with_password(args: &[&str], password: &str) -> Result<BrewOutput> {
-        // Pass password via BREWSTY_SUDO_PASS env var and use an inline askpass
-        // that reads it. This avoids writing the password to disk.
-
-        tracing::debug!("Executing brew command with password via inline SUDO_ASKPASS");
-
-        // Use /usr/bin/printenv to echo the env var — no shell escaping needed
-        let output = Command::new("brew")
-            .args(args)
-            .env("SUDO_ASKPASS", "/usr/bin/printenv")
-            .env("SUDO_ASKPASS_REQUIRE", "force")
-            .env("SUDO_ASKPASS_VARS", "BREWSTY_SUDO_PASS")
-            .env("BREWSTY_SUDO_PASS", password)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()?;
-
-        let stdout = String::from_utf8(output.stdout)?;
-        let stderr = String::from_utf8(output.stderr)?;
-
-        if !output.status.success() {
-            // Check if it's a password-related error
-            if stderr.contains("password is incorrect")
-                || stderr.contains("sudo: 1 incorrect password attempt")
-                || stderr.contains("sorry, try again")
-                || stderr.contains("incorrect password")
+            if combined.contains("incorrect password")
+                || combined.contains("incorrect password attempt")
+                || combined.contains("sorry, try again")
             {
                 return Err(anyhow!("Incorrect password"));
             }
@@ -176,30 +221,14 @@ impl BrewCommand {
 
     pub fn install_package(name: &str, package_type: PackageType) -> Result<BrewOutput> {
         let type_arg = Self::get_package_type_arg(package_type);
-        Self::execute_brew_with_output(&["install", type_arg, name])
-    }
-
-    pub fn install_package_with_password(
-        name: &str,
-        package_type: PackageType,
-        password: &str,
-    ) -> Result<BrewOutput> {
-        let type_arg = Self::get_package_type_arg(package_type);
-        Self::execute_brew_with_password(&["install", type_arg, name], password)
+        let prompt = Self::password_prompt(&format!("install {name}"));
+        Self::execute_brew_with_output(&["install", type_arg, name], &prompt)
     }
 
     pub fn uninstall_package(name: &str, package_type: PackageType) -> Result<BrewOutput> {
         let type_arg = Self::get_package_type_arg(package_type);
-        Self::execute_brew_with_output(&["uninstall", type_arg, name])
-    }
-
-    pub fn uninstall_package_with_password(
-        name: &str,
-        package_type: PackageType,
-        password: &str,
-    ) -> Result<BrewOutput> {
-        let type_arg = Self::get_package_type_arg(package_type);
-        Self::execute_brew_with_password(&["uninstall", type_arg, name], password)
+        let prompt = Self::password_prompt(&format!("uninstall {name}"));
+        Self::execute_brew_with_output(&["uninstall", type_arg, name], &prompt)
     }
 
     pub fn upgrade_package(name: &str, package_type: PackageType) -> Result<BrewOutput> {
@@ -347,15 +376,18 @@ impl BrewCommand {
     }
 
     pub fn start_service(name: &str) -> Result<BrewOutput> {
-        Self::execute_brew_with_output(&["services", "start", name])
+        let prompt = Self::password_prompt(&format!("start service {name}"));
+        Self::execute_brew_with_output(&["services", "start", name], &prompt)
     }
 
     pub fn stop_service(name: &str) -> Result<BrewOutput> {
-        Self::execute_brew_with_output(&["services", "stop", name])
+        let prompt = Self::password_prompt(&format!("stop service {name}"));
+        Self::execute_brew_with_output(&["services", "stop", name], &prompt)
     }
 
     pub fn restart_service(name: &str) -> Result<BrewOutput> {
-        Self::execute_brew_with_output(&["services", "restart", name])
+        let prompt = Self::password_prompt(&format!("restart service {name}"));
+        Self::execute_brew_with_output(&["services", "restart", name], &prompt)
     }
 
     // Export package list with versions
@@ -464,5 +496,17 @@ impl BrewCommand {
             return Err(anyhow!("Failed to untap {}: {}", name, stderr));
         }
         Ok(BrewOutput { stdout, stderr })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TempAskpassHelper;
+
+    #[test]
+    fn escapes_applescript_prompt_text() {
+        let script = TempAskpassHelper::script_contents(r#"Install "foo\bar" requires approval"#);
+
+        assert!(script.contains(r#"set promptText to "Install \"foo\\bar\" requires approval""#));
     }
 }

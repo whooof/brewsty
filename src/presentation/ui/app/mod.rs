@@ -6,8 +6,8 @@ use crate::domain::entities::{AppConfig, OperationHistory, Package};
 use crate::infrastructure::config_repository::ConfigRepository;
 use crate::presentation::components::{
     BrewfileSyncAction, BrewfileSyncModal, CleanupAction, CleanupModal, CleanupType, FilterState,
-    InfoModal, InfoModalAction, LogManager, MergedPackageList, PackageList, PasswordModal,
-    ServiceList, Tab, TabManager, ToastManager,
+    InfoModal, InfoModalAction, LogManager, MergedPackageList, PackageList, ServiceList, Tab,
+    TabManager, ToastManager,
 };
 use crate::presentation::services::{AsyncExecutor, AsyncTaskManager};
 use crate::presentation::ui::tabs::history::{HistoryAction, HistoryTab};
@@ -28,7 +28,6 @@ pub struct BrewstyApp {
 
     pub(super) cleanup_modal: CleanupModal,
     pub(super) info_modal: InfoModal,
-    pub(super) password_modal: PasswordModal,
     pub(super) log_manager: LogManager,
     pub(super) toast_manager: ToastManager,
     pub(super) log_rx: Receiver<String>,
@@ -63,7 +62,6 @@ pub struct BrewstyApp {
     pub(super) current_uninstall_package: Option<String>,
     pub(super) current_update_package: Option<String>,
     pub(super) pending_updates: Vec<Package>,
-    pub(super) pending_operation: Option<PendingOperation>,
     pub(super) confirm_action: Option<ConfirmAction>,
     pub(super) packages_in_operation: std::collections::HashSet<String>,
     pub(super) services_in_operation: std::collections::HashSet<String>,
@@ -84,12 +82,6 @@ pub struct BrewstyApp {
     #[allow(clippy::type_complexity)]
     pub(super) pending_deps_load: Option<Arc<Mutex<Option<(String, String)>>>>,
     pub(super) operation_history: OperationHistory,
-}
-
-#[derive(Clone, Debug)]
-pub(super) enum PendingOperation {
-    Install(Package),
-    Uninstall(Package),
 }
 
 #[derive(Clone, Debug)]
@@ -125,7 +117,6 @@ impl BrewstyApp {
 
             cleanup_modal: CleanupModal::new(),
             info_modal: InfoModal::new(),
-            password_modal: PasswordModal::new(),
             log_manager: LogManager::new(),
             toast_manager: ToastManager::new(),
             log_rx,
@@ -154,7 +145,6 @@ impl BrewstyApp {
             current_uninstall_package: None,
             current_update_package: None,
             pending_updates: Vec::new(),
-            pending_operation: None,
             confirm_action: None,
             packages_in_operation: std::collections::HashSet::new(),
             services_in_operation: std::collections::HashSet::new(),
@@ -663,19 +653,6 @@ impl eframe::App for BrewstyApp {
                             }
                         });
                     });
-            }
-
-            self.password_modal.render(ctx);
-            if let Some((confirmed, password)) = self.password_modal.take_result() {
-                if confirmed && !password.is_empty() {
-                    self.retry_with_password(&password);
-                } else {
-                    self.pending_operation = None;
-                    self.log_manager
-                        .push("Password entry cancelled.".to_string());
-                    self.toast_manager.info("Password entry cancelled");
-                    tracing::info!("Password entry cancelled");
-                }
             }
         });
 
