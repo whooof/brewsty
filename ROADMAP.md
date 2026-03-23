@@ -389,10 +389,10 @@ wasmtime = "15"
 | 1. Technical Debt | ✅ Complete | 5/5 ✅ |
 | 2. Quick Wins | ✅ Complete | 4/4 ✅ |
 | 3. High Priority | ✅ Complete | 4/4 ✅ |
-| 4. Medium Priority | 🔄 In Progress | 3/6 ✅ |
+| 4. Medium Priority | 🔄 In Progress | 4/6 ✅ |
 | 5. Advanced | ⏳ Pending | 0/5 |
 
-**Total:** 16/24 tasks completed (67%!)
+**Total:** 17/24 tasks completed (71%!)
 
 ### ✅ Completed
 **Phase 1 - Technical Debt:**
@@ -418,6 +418,7 @@ wasmtime = "15"
 - 4.1 Brewfile Support ✅ (Mar 23) - Parse/generate/export/import (core logic)
 - 4.2 Desktop Notifications ✅ (Mar 23) - Native macOS notifications
 - 4.3 Dark/Light Theme ✅ (already implemented) - System/Light/Dark with custom colors
+- 4.4 Package Categories ✅ (Mar 23) - 12 categories with auto-detection
 ---
 
 ## 🎯 Next Steps
