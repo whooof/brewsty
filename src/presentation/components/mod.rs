@@ -5,6 +5,7 @@ pub mod history_timeline;
 pub mod info_modal;
 pub mod log_manager;
 pub mod merged_package_list;
+pub mod orphan_detection;
 pub mod package_details_modal;
 pub mod package_list;
 pub mod selection_state;
@@ -22,6 +23,9 @@ pub use history_timeline::{
 pub use info_modal::{InfoModal, InfoModalAction};
 pub use log_manager::{LogLevel, LogManager};
 pub use merged_package_list::MergedPackageList;
+pub use orphan_detection::{
+    OrphanDetectionResult, OrphanPackage, detect_orphans, render_orphan_detection,
+};
 pub use package_details_modal::{PackageDetailsAction, PackageDetailsModal};
 pub use package_list::PackageList;
 pub use selection_state::SelectionState;
