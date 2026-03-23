@@ -44,7 +44,7 @@ pub fn export_packages_to_json(packages: &[Package], path: &Path) -> Result<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::entities::{Package, PackageType};
+    use crate::domain::entities::{PackageCategory, PackageType};
     use tempfile::tempdir;
 
     #[test]
@@ -61,6 +61,7 @@ mod tests {
                 version_load_failed: false,
                 pinned: false,
                 installed_size: None,
+                category: PackageCategory::Development,
             },
             Package {
                 name: "visual-studio-code".to_string(),
@@ -73,6 +74,7 @@ mod tests {
                 version_load_failed: false,
                 pinned: false,
                 installed_size: None,
+                category: PackageCategory::Development,
             },
         ];
 

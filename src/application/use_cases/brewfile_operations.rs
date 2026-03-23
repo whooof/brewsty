@@ -188,7 +188,7 @@ mod tests {
 
     #[test]
     fn test_generate_brewfile() {
-        use crate::domain::entities::Package;
+        use crate::domain::entities::{Package, PackageCategory};
 
         let packages = vec![
             Package {
@@ -202,6 +202,7 @@ mod tests {
                 version_load_failed: false,
                 pinned: false,
                 installed_size: None,
+                category: PackageCategory::Development,
             },
             Package {
                 name: "visual-studio-code".to_string(),
@@ -214,6 +215,7 @@ mod tests {
                 version_load_failed: false,
                 pinned: false,
                 installed_size: None,
+                category: PackageCategory::Development,
             },
         ];
 
