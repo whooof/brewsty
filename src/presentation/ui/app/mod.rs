@@ -511,13 +511,22 @@ impl eframe::App for BrewstyApp {
         // Keyboard shortcuts (Cmd on macOS)
         let modifiers = ctx.input(|i| i.modifiers);
         if modifiers.command {
+            // Cmd+Q: Quit application
+            if ctx.input(|i| i.key_pressed(egui::Key::Q)) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            // Cmd+F: Focus search (placeholder - needs filter_state integration)
+            // Currently handled by filter_state directly in UI
+            // Cmd+R: Refresh current tab
             if ctx.input(|i| i.key_pressed(egui::Key::R)) {
                 match self.tab_manager.current() {
                     Tab::Installed => self.load_installed_packages(true),
                     Tab::Services => self.load_services(),
+                    Tab::SearchInstall => self.handle_search(),
                     _ => {}
                 }
             }
+            // Cmd+1-6: Switch tabs
             if ctx.input(|i| i.key_pressed(egui::Key::Num1)) {
                 self.tab_manager.switch_to(Tab::Installed);
             }
@@ -536,6 +545,12 @@ impl eframe::App for BrewstyApp {
             if ctx.input(|i| i.key_pressed(egui::Key::Num6)) {
                 self.tab_manager.switch_to(Tab::Log);
             }
+        }
+
+        // Escape: Close modals
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.confirm_action = None;
+            self.cleanup_modal = crate::presentation::components::CleanupModal::new();
         }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
