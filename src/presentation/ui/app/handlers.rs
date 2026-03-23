@@ -1441,9 +1441,7 @@ impl BrewstyApp {
             }
         });
 
-        self.task_manager.set_active_task(AsyncTask::CheckUpdates {
-            result,
-            logs,
-        });
+        self.task_manager
+            .set_active_task(AsyncTask::CheckUpdates { result, logs });
     }
 }
