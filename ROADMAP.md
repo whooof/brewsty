@@ -389,10 +389,10 @@ wasmtime = "15"
 | 1. Technical Debt | ✅ Complete | 5/5 ✅ |
 | 2. Quick Wins | ✅ Complete | 4/4 ✅ |
 | 3. High Priority | ✅ Complete | 4/4 ✅ |
-| 4. Medium Priority | ⏳ Pending | 0/6 |
+| 4. Medium Priority | 🔄 In Progress | 1/6 ✅ |
 | 5. Advanced | ⏳ Pending | 0/5 |
 
-**Total:** 13/24 tasks completed (54%!)
+**Total:** 14/24 tasks completed (58%!)
 
 ### ✅ Completed
 **Phase 1 - Technical Debt:**
@@ -413,6 +413,9 @@ wasmtime = "15"
 - 3.2 Package Details Panel ✅ (Mar 23) - Modal with package info
 - 3.3 Export/Import Full State ✅ (Mar 23) - JSON/YAML import support
 - 3.4 Unit & Integration Tests ✅ (Mar 23) - 70 tests passing
+
+**Phase 4 - Medium Priority:**
+- 4.1 Brewfile Support ✅ (Mar 23) - Parse/generate/export/import (core logic)
 ---
 
 ## 🎯 Next Steps
