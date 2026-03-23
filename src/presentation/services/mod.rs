@@ -3,4 +3,4 @@ mod async_task_manager;
 pub mod log_capture;
 
 pub use async_executor::AsyncExecutor;
-pub use async_task_manager::{AsyncTask, AsyncTaskManager, TaskSharedState};
+pub use async_task_manager::{AsyncTask, AsyncTaskManager, LoadTaskSharedState, TaskSharedState};
