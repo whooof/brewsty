@@ -23,10 +23,11 @@ impl BrewfileSyncPreview {
     pub fn parse_check_and_cleanup(path: &str, check_output: &str, cleanup_output: &str) -> Self {
         let mut missing = Vec::new();
         for line in check_output.lines() {
-            if let Some(dep) = line.strip_prefix("→ ")
-                && let Some(idx) = dep.find(" needs to be installed or updated.") {
+            if let Some(dep) = line.strip_prefix("→ ") {
+                if let Some(idx) = dep.find(" needs to be installed or updated.") {
                     missing.push(dep[..idx].to_string());
                 }
+            }
         }
 
         let mut extra = Vec::new();
