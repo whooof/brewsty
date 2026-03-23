@@ -18,6 +18,6 @@ pub use log_manager::{LogLevel, LogManager};
 pub use merged_package_list::MergedPackageList;
 pub use package_list::PackageList;
 pub use selection_state::SelectionState;
-pub use service_list::ServiceList;
+pub use service_list::{ServiceList, ServiceModalAction};
 pub use tab_manager::{Tab, TabManager};
 pub use toast::ToastManager;

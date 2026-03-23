@@ -96,13 +96,12 @@ impl FilterState {
     }
 
     pub fn check_debounce_trigger(&mut self, delay_ms: u64) -> bool {
-        if self.pending_search {
-            if let Some(time) = self.last_typing_time {
-                if time.elapsed().as_millis() as u64 >= delay_ms {
-                    self.pending_search = false;
-                    return true;
-                }
-            }
+        if self.pending_search
+            && let Some(time) = self.last_typing_time
+            && time.elapsed().as_millis() as u64 >= delay_ms
+        {
+            self.pending_search = false;
+            return true;
         }
         false
     }

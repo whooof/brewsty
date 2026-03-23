@@ -61,6 +61,28 @@ impl PackageList {
         on_unpin: &mut Option<Package>,
     ) {
         let search_lower = search_query.to_lowercase();
+        let visible_packages: Vec<&Package> = self
+            .packages
+            .iter()
+            .filter(|package| match package.package_type {
+                PackageType::Formula => show_formulae,
+                PackageType::Cask => show_casks,
+            })
+            .filter(|package| {
+                search_query.is_empty() || package.name.to_lowercase().contains(&search_lower)
+            })
+            .collect();
+
+        if visible_packages.is_empty() {
+            ui.add_space(12.0);
+            ui.label(
+                RichText::new("No packages match the current search and filters.")
+                    .italics()
+                    .color(Color32::GRAY),
+            );
+            return;
+        }
+
         let text_height = egui::TextStyle::Body
             .resolve(ui.style())
             .size
@@ -103,22 +125,7 @@ impl PackageList {
                 });
             })
             .body(|mut body| {
-                for package in &self.packages {
-                    let should_show = match package.package_type {
-                        PackageType::Formula => show_formulae,
-                        PackageType::Cask => show_casks,
-                    };
-
-                    if !should_show {
-                        continue;
-                    }
-
-                    if !search_query.is_empty()
-                        && !package.name.to_lowercase().contains(&search_lower)
-                    {
-                        continue;
-                    }
-
+                for package in visible_packages.iter().copied() {
                     let row_height = text_height + TABLE_ROW_PADDING;
 
                     body.row(row_height, |mut row| {
@@ -203,44 +210,48 @@ impl PackageList {
 
                         row.col(|ui| {
                             padded_cell(ui, |ui| {
-                                ui.horizontal(|ui| {
+                                ui.menu_button("Actions", |ui| {
                                     if package.installed {
-                                        if ui.button("X").on_hover_text("Uninstall").clicked() {
+                                        if ui.button("Uninstall").clicked() {
                                             *on_uninstall = Some(package.clone());
+                                            ui.close();
                                         }
                                         if package.outdated
                                             && !package.pinned
-                                            && ui.button("🔄").on_hover_text("Update").clicked()
+                                            && ui.button("Update").clicked()
                                         {
                                             *on_update = Some(package.clone());
+                                            ui.close();
                                         }
-                                        // Only show pin/unpin for formulae
                                         if matches!(package.package_type, PackageType::Formula) {
                                             if package.pinned {
-                                                if ui.button("🔓").on_hover_text("Unpin").clicked()
-                                                {
+                                                if ui.button("Unpin").clicked() {
                                                     *on_unpin = Some(package.clone());
+                                                    ui.close();
                                                 }
-                                            } else if ui.button("📌").on_hover_text("Pin").clicked()
-                                            {
+                                            } else if ui.button("Pin").clicked() {
                                                 *on_pin = Some(package.clone());
+                                                ui.close();
                                             }
                                         }
-                                    } else if ui.button("⬇").on_hover_text("Install").clicked() {
+                                    } else if ui.button("Install").clicked() {
                                         *on_install = Some(package.clone());
+                                        ui.close();
                                     }
 
                                     if package.version.is_none()
                                         && !package.version_load_failed
                                         && !packages_loading_info.contains(&package.name)
                                     {
-                                        if ui.button("⏳").on_hover_text("Load Info").clicked() {
+                                        if ui.button("Load Info").clicked() {
                                             *on_load_info = Some(package.clone());
+                                            ui.close();
                                         }
                                     } else if package.description.is_some()
-                                        && ui.button("ℹ").on_hover_text("Info").clicked()
+                                        && ui.button("Info").clicked()
                                     {
                                         self.show_info_action = Some(package.clone());
+                                        ui.close();
                                     }
                                 });
                             })

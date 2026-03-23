@@ -18,6 +18,12 @@ pub struct ServiceList {
     service_detail_modal: Option<ServiceDetailModal>,
 }
 
+pub enum ServiceModalAction {
+    ReloadInfo(String),
+    LoadLog(String),
+    OpenPath(String),
+}
+
 /// Modal showing detailed service info and/or log content.
 pub struct ServiceDetailModal {
     pub service_name: String,
@@ -25,7 +31,8 @@ pub struct ServiceDetailModal {
     pub log_content: Option<String>,
     pub loading_info: bool,
     pub loading_log: bool,
-    pub error: Option<String>,
+    pub info_error: Option<String>,
+    pub log_error: Option<String>,
 }
 
 impl ServiceDetailModal {
@@ -36,7 +43,8 @@ impl ServiceDetailModal {
             log_content: None,
             loading_info: false,
             loading_log: false,
-            error: None,
+            info_error: None,
+            log_error: None,
         }
     }
 }
@@ -74,50 +82,52 @@ impl ServiceList {
         } else {
             ServiceDetailModal::new(service_name)
         };
-        modal.error = None;
+        modal.log_error = None;
         modal.loading_log = true;
         self.service_detail_modal = Some(modal);
     }
 
     pub fn set_service_info(&mut self, name: &str, info: ServiceInfo) {
-        if let Some(modal) = &mut self.service_detail_modal {
-            if modal.service_name == name {
-                modal.info = Some(info);
-                modal.loading_info = false;
-            }
+        if let Some(modal) = &mut self.service_detail_modal
+            && modal.service_name == name
+        {
+            modal.info = Some(info);
+            modal.loading_info = false;
+            modal.info_error = None;
         }
     }
 
     pub fn set_service_info_error(&mut self, name: &str, error: String) {
-        if let Some(modal) = &mut self.service_detail_modal {
-            if modal.service_name == name {
-                modal.error = Some(error);
-                modal.loading_info = false;
-            }
+        if let Some(modal) = &mut self.service_detail_modal
+            && modal.service_name == name
+        {
+            modal.loading_info = false;
+            modal.info_error = Some(error);
         }
     }
 
     pub fn set_service_log(&mut self, name: &str, log_content: String) {
-        if let Some(modal) = &mut self.service_detail_modal {
-            if modal.service_name == name {
-                modal.log_content = Some(log_content);
-                modal.loading_log = false;
-            }
+        if let Some(modal) = &mut self.service_detail_modal
+            && modal.service_name == name
+        {
+            modal.log_content = Some(log_content);
+            modal.loading_log = false;
+            modal.log_error = None;
         }
     }
 
     pub fn set_service_log_error(&mut self, name: &str, error: String) {
-        if let Some(modal) = &mut self.service_detail_modal {
-            if modal.service_name == name {
-                modal.error = Some(error);
-                modal.loading_log = false;
-            }
+        if let Some(modal) = &mut self.service_detail_modal
+            && modal.service_name == name
+        {
+            modal.loading_log = false;
+            modal.log_error = Some(error);
         }
     }
 
     /// Render the detail modal if open. Returns true if it was closed.
-    pub fn render_detail_modal(&mut self, ctx: &egui::Context) -> Option<String> {
-        let mut log_request = None;
+    pub fn render_detail_modal(&mut self, ctx: &egui::Context) -> Option<ServiceModalAction> {
+        let mut modal_action = None;
 
         let should_close = if let Some(modal) = &self.service_detail_modal {
             let mut close = false;
@@ -130,16 +140,18 @@ impl ServiceList {
                 .default_height(400.0)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| {
-                    if let Some(error) = &modal.error {
-                        ui.colored_label(Color32::from_rgb(255, 100, 100), error);
-                        ui.separator();
-                    }
-
                     if modal.loading_info {
                         ui.horizontal(|ui| {
                             ui.spinner();
                             ui.label("Loading service info...");
                         });
+                    } else if let Some(error) = &modal.info_error {
+                        ui.colored_label(Color32::from_rgb(255, 100, 100), error);
+                        if ui.button("Reload Info").clicked() {
+                            modal_action =
+                                Some(ServiceModalAction::ReloadInfo(modal.service_name.clone()));
+                        }
+                        ui.separator();
                     } else if let Some(info) = &modal.info {
                         egui::Grid::new("service_info_grid")
                             .num_columns(2)
@@ -215,13 +227,25 @@ impl ServiceList {
 
                                 if let Some(log) = &info.log_path {
                                     ui.strong("Log Path:");
-                                    ui.label(log);
+                                    ui.horizontal(|ui| {
+                                        ui.label(log);
+                                        if ui.small_button("Open").clicked() {
+                                            modal_action =
+                                                Some(ServiceModalAction::OpenPath(log.clone()));
+                                        }
+                                    });
                                     ui.end_row();
                                 }
 
                                 if let Some(err_log) = &info.error_log_path {
                                     ui.strong("Error Log:");
-                                    ui.label(err_log);
+                                    ui.horizontal(|ui| {
+                                        ui.label(err_log);
+                                        if ui.small_button("Open").clicked() {
+                                            modal_action =
+                                                Some(ServiceModalAction::OpenPath(err_log.clone()));
+                                        }
+                                    });
                                     ui.end_row();
                                 }
                             });
@@ -235,6 +259,12 @@ impl ServiceList {
                             ui.spinner();
                             ui.label("Loading log...");
                         });
+                    } else if let Some(error) = &modal.log_error {
+                        ui.colored_label(Color32::from_rgb(255, 100, 100), error);
+                        if ui.button("Reload Log").clicked() {
+                            modal_action =
+                                Some(ServiceModalAction::LoadLog(modal.service_name.clone()));
+                        }
                     } else if let Some(log_text) = &modal.log_content {
                         ui.strong("Log Output (last 100 lines):");
                         ui.add_space(4.0);
@@ -251,10 +281,9 @@ impl ServiceList {
                             .as_ref()
                             .map(|i| i.log_path.is_some() || i.error_log_path.is_some())
                             .unwrap_or(false);
-                        if has_log {
-                            if ui.button("Load Log").clicked() {
-                                log_request = Some(modal.service_name.clone());
-                            }
+                        if has_log && ui.button("Load Log").clicked() {
+                            modal_action =
+                                Some(ServiceModalAction::LoadLog(modal.service_name.clone()));
                         }
                     }
 
@@ -274,9 +303,10 @@ impl ServiceList {
             self.service_detail_modal = None;
         }
 
-        log_request
+        modal_action
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
@@ -501,5 +531,18 @@ mod tests {
         assert_eq!(modal.service_name, "nginx");
         assert!(modal.info.is_none());
         assert!(modal.loading_log);
+    }
+
+    #[test]
+    fn info_and_log_errors_are_tracked_independently() {
+        let mut list = ServiceList::new();
+        list.show_info_modal("redis".to_string());
+        list.set_service_info_error("redis", "info failed".to_string());
+        list.show_log_modal("redis".to_string());
+        list.set_service_log_error("redis", "log failed".to_string());
+
+        let modal = list.service_detail_modal.as_ref().unwrap();
+        assert_eq!(modal.info_error.as_deref(), Some("info failed"));
+        assert_eq!(modal.log_error.as_deref(), Some("log failed"));
     }
 }
