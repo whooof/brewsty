@@ -8,6 +8,7 @@ pub mod package_list;
 pub mod service;
 
 pub use app::{AppError, CommandResult, LoadState, MessageSeverity, OperationState, UserMessage};
+pub use brewfile::BrewfileSyncPreview;
 pub use config::{AppConfig, ThemeMode};
 pub use doctor::{DoctorOutput, DoctorWarning};
 pub use history::{OperationHistory, OperationType};

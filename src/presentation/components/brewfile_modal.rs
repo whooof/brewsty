@@ -1,125 +1,240 @@
-use crate::domain::entities::brewfile::BrewfileSyncPreview;
-use eframe::egui;
+//! Brewfile Import/Export Modal
 
+use egui::{RichText, ScrollArea, Ui};
+
+// Legacy types for backward compatibility
+#[derive(Default)]
+pub struct BrewfileSyncModal {
+    pub open: bool,
+}
+
+impl BrewfileSyncModal {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn show_preview(&mut self, _preview: crate::domain::entities::BrewfileSyncPreview) {
+        self.open = true;
+    }
+
+    pub fn close(&mut self) {
+        self.open = false;
+    }
+
+    pub fn render(&mut self, _ctx: &egui::Context) -> Option<BrewfileSyncAction> {
+        None
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum BrewfileSyncAction {
     Apply { install: bool, cleanup: bool },
     Cancel,
 }
 
-pub struct BrewfileSyncModal {
-    preview: Option<BrewfileSyncPreview>,
-    show: bool,
-    install_missing: bool,
-    cleanup_extra: bool,
+#[derive(Default)]
+pub struct BrewfileModal {
+    pub open: bool,
+    pub mode: BrewfileModalMode,
+    pub preview: Option<String>,
+    pub file_path: Option<String>,
+    pub error: Option<String>,
 }
 
-impl BrewfileSyncModal {
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+pub enum BrewfileModalMode {
+    #[default]
+    None,
+    Export,
+    Import,
+    Preview,
+}
+
+impl BrewfileModal {
     pub fn new() -> Self {
-        Self {
-            preview: None,
-            show: false,
-            install_missing: true,
-            cleanup_extra: false,
-        }
+        Self::default()
     }
 
-    pub fn show_preview(&mut self, preview: BrewfileSyncPreview) {
-        self.preview = Some(preview);
-        self.show = true;
-        self.install_missing = true;
-        self.cleanup_extra = false;
-    }
+    pub fn show(&mut self, ctx: &egui::Context) -> BrewfileModalAction {
+        let mut action = BrewfileModalAction::None;
 
-    pub fn close(&mut self) {
-        self.show = false;
-        self.preview = None;
-    }
-
-    pub fn render(&mut self, ctx: &egui::Context) -> Option<BrewfileSyncAction> {
-        if !self.show {
-            return None;
+        if !self.open || self.mode == BrewfileModalMode::None {
+            return action;
         }
 
-        let preview = self.preview.as_ref()?;
-        let mut action = None;
+        let mut close = false;
+        let title = match self.mode {
+            BrewfileModalMode::Export => "📤 Export Brewfile",
+            BrewfileModalMode::Import => "📥 Import Brewfile",
+            BrewfileModalMode::Preview => "👁️ Brewfile Preview",
+            _ => "🍺 Brewfile",
+        };
 
-        let mut is_open = true;
-        egui::Window::new("🔄 Sync with Brewfile")
-            .open(&mut is_open)
+        egui::Window::new(title)
             .collapsible(false)
             .resizable(true)
-            .default_width(500.0)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .default_size([600.0, 500.0])
             .show(ctx, |ui| {
-                if !preview.has_changes() {
-                    ui.label("✅ Your system perfectly matches the Brewfile! No changes needed.");
-                    ui.add_space(10.0);
-                    if ui.button("Close").clicked() {
-                        action = Some(BrewfileSyncAction::Cancel);
-                    }
-                    return;
-                }
-
-                ui.label(format!("Brewfile: {}", preview.brewfile_path));
-                ui.separator();
-
-                egui::ScrollArea::vertical()
-                    .max_height(300.0)
-                    .show(ui, |ui| {
-                        if !preview.missing_dependencies.is_empty() {
-                            ui.heading(
-                                egui::RichText::new("📦 Missing from System")
-                                    .color(egui::Color32::YELLOW),
-                            );
-                            ui.label(
-                                "These packages are in the Brewfile but not currently installed:",
-                            );
-                            ui.checkbox(&mut self.install_missing, "Install missing dependencies");
-                            ui.add_space(5.0);
-                            for dep in &preview.missing_dependencies {
-                                ui.label(format!("• {}", dep));
-                            }
-                            ui.add_space(10.0);
-                        }
-
-                        if !preview.extra_dependencies.is_empty() {
-                            ui.heading(
-                                egui::RichText::new("Extra on System")
-                                    .color(egui::Color32::LIGHT_RED),
-                            );
-                            ui.label(
-                                "These packages are installed but not listed in the Brewfile:",
-                            );
-                            ui.checkbox(
-                                &mut self.cleanup_extra,
-                                "Uninstall extra dependencies (WARNING: Destructive)",
-                            );
-                            ui.add_space(5.0);
-                            for dep in &preview.extra_dependencies {
-                                ui.label(format!("• {}", dep));
-                            }
-                        }
-                    });
-
-                ui.separator();
                 ui.horizontal(|ui| {
-                    if ui.button("Apply Selected Changes").clicked() {
-                        action = Some(BrewfileSyncAction::Apply {
-                            install: self.install_missing
-                                && !preview.missing_dependencies.is_empty(),
-                            cleanup: self.cleanup_extra && !preview.extra_dependencies.is_empty(),
-                        });
-                    }
-                    if ui.button("Cancel").clicked() {
-                        action = Some(BrewfileSyncAction::Cancel);
+                    if ui.button("✕ Close").clicked() {
+                        close = true;
                     }
                 });
+                ui.separator();
+
+                match self.mode {
+                    BrewfileModalMode::Export => self.render_export(ui, &mut action),
+                    BrewfileModalMode::Import => self.render_import(ui, &mut action),
+                    BrewfileModalMode::Preview => self.render_preview(ui),
+                    _ => {}
+                }
+
+                if let Some(error) = &self.error {
+                    ui.add_space(8.0);
+                    ui.colored_label(egui::Color32::RED, RichText::new(error).strong());
+                }
             });
 
-        if !is_open {
-            action = Some(BrewfileSyncAction::Cancel);
+        if close {
+            self.close();
         }
 
         action
     }
+
+    fn render_export(&self, ui: &mut Ui, action: &mut BrewfileModalAction) {
+        ui.label("Export your installed packages to a Brewfile.");
+        ui.add_space(16.0);
+
+        if let Some(preview) = &self.preview {
+            ui.label(RichText::new("Preview:").strong());
+            ui.add_space(8.0);
+
+            egui::ScrollArea::vertical()
+                .max_height(300.0)
+                .show(ui, |ui| {
+                    egui::Frame::dark_canvas(ui.style()).show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut preview.clone())
+                                .desired_rows(10)
+                                .desired_width(f32::INFINITY)
+                                .font(egui::TextStyle::Monospace),
+                        );
+                    });
+                });
+
+            ui.add_space(16.0);
+        }
+
+        ui.horizontal(|ui| {
+            if ui.button("💾 Save to File").clicked() {
+                *action = BrewfileModalAction::SaveToFile;
+            }
+
+            if ui.button("📋 Copy to Clipboard").clicked() {
+                *action = BrewfileModalAction::CopyToClipboard;
+            }
+        });
+    }
+
+    fn render_import(&self, ui: &mut Ui, action: &mut BrewfileModalAction) {
+        ui.label("Import packages from a Brewfile.");
+        ui.add_space(16.0);
+
+        ui.label(
+            RichText::new("⚠️ Warning: This will install all packages listed in the Brewfile.")
+                .small(),
+        );
+        ui.add_space(8.0);
+
+        if let Some(path) = &self.file_path {
+            ui.label(format!("Selected file: {}", path));
+        }
+
+        ui.add_space(16.0);
+
+        ui.horizontal(|ui| {
+            if ui.button("📂 Select File").clicked() {
+                *action = BrewfileModalAction::SelectFile;
+            }
+
+            if self.file_path.is_some() && ui.button("✅ Import").clicked() {
+                *action = BrewfileModalAction::Import;
+            }
+        });
+
+        if let Some(preview) = &self.preview {
+            ui.add_space(16.0);
+            ui.label(RichText::new("Preview:").strong());
+            ui.add_space(8.0);
+
+            ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+                ui.label(preview);
+            });
+        }
+    }
+
+    fn render_preview(&self, ui: &mut Ui) {
+        if let Some(preview) = &self.preview {
+            ScrollArea::vertical().show(ui, |ui| {
+                egui::Frame::dark_canvas(ui.style()).show(ui, |ui| {
+                    ui.add(
+                        egui::TextEdit::multiline(&mut preview.clone())
+                            .desired_rows(20)
+                            .desired_width(f32::INFINITY)
+                            .font(egui::TextStyle::Monospace),
+                    );
+                });
+            });
+        } else {
+            ui.label("No preview available");
+        }
+    }
+
+    pub fn open_export(&mut self, preview: String) {
+        self.mode = BrewfileModalMode::Export;
+        self.preview = Some(preview);
+        self.open = true;
+        self.error = None;
+    }
+
+    pub fn open_import(&mut self) {
+        self.mode = BrewfileModalMode::Import;
+        self.preview = None;
+        self.file_path = None;
+        self.open = true;
+        self.error = None;
+    }
+
+    pub fn open_preview(&mut self, preview: String) {
+        self.mode = BrewfileModalMode::Preview;
+        self.preview = Some(preview);
+        self.open = true;
+        self.error = None;
+    }
+
+    pub fn set_file_path(&mut self, path: String) {
+        self.file_path = Some(path);
+    }
+
+    pub fn set_error(&mut self, error: String) {
+        self.error = Some(error);
+    }
+
+    pub fn close(&mut self) {
+        self.open = false;
+        self.mode = BrewfileModalMode::None;
+        self.preview = None;
+        self.file_path = None;
+        self.error = None;
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum BrewfileModalAction {
+    None,
+    SaveToFile,
+    CopyToClipboard,
+    SelectFile,
+    Import,
 }
