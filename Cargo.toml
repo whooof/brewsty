@@ -29,6 +29,7 @@ open = "5.3.3"
 log = "0.4.29"
 serde_yaml = "0.9.34"
 mac-notification-sys = "0.6.12"
+egui_plot = "0.34.1"
 
 [dev-dependencies]
 tempfile = "3.27.0"
