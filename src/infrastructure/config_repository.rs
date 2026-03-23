@@ -8,6 +8,12 @@ pub struct ConfigRepository {
     config_path: PathBuf,
 }
 
+impl Default for ConfigRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConfigRepository {
     pub fn new() -> Self {
         let mut config_dir = home_dir().unwrap_or_else(|| PathBuf::from("."));

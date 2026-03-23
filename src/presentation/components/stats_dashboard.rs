@@ -81,26 +81,36 @@ pub struct OperationStats {
 
 impl OperationStats {
     pub fn from_history(history: &OperationHistory) -> Self {
-        let mut stats = Self::default();
-
-        stats.total_operations = history.records.len();
+        let total_operations = history.records.len();
+        let mut successful_operations = 0;
+        let mut failed_operations = 0;
+        let mut installs = 0;
+        let mut uninstalls = 0;
+        let mut updates = 0;
 
         for record in &history.records {
             if record.success {
-                stats.successful_operations += 1;
+                successful_operations += 1;
             } else {
-                stats.failed_operations += 1;
+                failed_operations += 1;
             }
 
             match record.operation {
-                OperationType::Install => stats.installs += 1,
-                OperationType::Uninstall => stats.uninstalls += 1,
-                OperationType::Update | OperationType::UpdateAll => stats.updates += 1,
+                OperationType::Install => installs += 1,
+                OperationType::Uninstall => uninstalls += 1,
+                OperationType::Update | OperationType::UpdateAll => updates += 1,
                 _ => {}
             }
         }
 
-        stats
+        Self {
+            total_operations,
+            successful_operations,
+            failed_operations,
+            installs,
+            uninstalls,
+            updates,
+        }
     }
 
     pub fn success_rate(&self) -> f64 {
@@ -130,7 +140,7 @@ impl CategoryDistribution {
         dist
     }
 
-    pub fn to_plot_points(&self) -> PlotPoints {
+    pub fn to_plot_points(&self) -> PlotPoints<'_> {
         let mut points = Vec::new();
         for (i, (_category, count)) in self.categories.iter().enumerate() {
             points.push([i as f64, *count as f64]);

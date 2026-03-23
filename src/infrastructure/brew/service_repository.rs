@@ -38,6 +38,12 @@ struct ServiceInfoEntry {
     command: Option<String>,
 }
 
+impl Default for BrewServiceRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BrewServiceRepository {
     pub fn new() -> Self {
         Self

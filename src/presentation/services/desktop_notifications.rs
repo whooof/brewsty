@@ -78,8 +78,11 @@ pub fn notify_error(title: &str, message: &str) {
 #[derive(Debug, Clone)]
 pub struct NotificationConfig {
     pub enabled: bool,
+    #[allow(dead_code)]
     pub show_on_install: bool,
+    #[allow(dead_code)]
     pub show_on_uninstall: bool,
+    #[allow(dead_code)]
     pub show_on_update: bool,
     pub show_on_error: bool,
 }
@@ -97,10 +100,12 @@ impl Default for NotificationConfig {
 }
 
 impl NotificationConfig {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[allow(dead_code)]
     pub fn should_notify(&self, notification_type: NotificationType) -> bool {
         if !self.enabled {
             return false;

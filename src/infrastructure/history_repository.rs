@@ -8,6 +8,12 @@ pub struct FileHistoryRepository {
     history_path: PathBuf,
 }
 
+impl Default for FileHistoryRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FileHistoryRepository {
     pub fn new() -> Self {
         let config_dir = dirs::config_dir()

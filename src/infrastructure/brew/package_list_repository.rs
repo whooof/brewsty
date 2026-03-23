@@ -9,6 +9,12 @@ use chrono::Utc;
 
 pub struct BrewPackageListRepository;
 
+impl Default for BrewPackageListRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BrewPackageListRepository {
     pub fn new() -> Self {
         Self

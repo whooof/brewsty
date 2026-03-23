@@ -123,7 +123,7 @@ fn check_if_dependency(
         "ca-certificates",
     ];
 
-    common_deps.iter().any(|&dep| package_name == dep)
+    common_deps.contains(&package_name)
 }
 
 /// Render the orphan detection results
@@ -185,8 +185,8 @@ pub fn render_orphan_detection(
     ui.add_space(10.0);
 
     // Remove selected button
-    if !selected_orphans.is_empty() {
-        if ui
+    if !selected_orphans.is_empty()
+        && ui
             .button(format!(
                 "🗑️ Remove {} selected orphan(s)",
                 selected_orphans.len()
@@ -195,7 +195,6 @@ pub fn render_orphan_detection(
         {
             on_remove_selected(selected_orphans);
         }
-    }
 }
 
 fn format_size(bytes: u64) -> String {

@@ -537,17 +537,15 @@ impl eframe::App for BrewstyApp {
                     .success("Configuration saved".to_string());
             }
             // Cmd+Z: Undo last operation
-            if ctx.input(|i| i.key_pressed(egui::Key::Z)) {
-                if let Some(last_op) = self.operation_history.records.first() {
-                    if last_op.operation == OperationType::Install
+            if ctx.input(|i| i.key_pressed(egui::Key::Z))
+                && let Some(last_op) = self.operation_history.records.first()
+                    && (last_op.operation == OperationType::Install
                         || last_op.operation == OperationType::Uninstall
-                        || last_op.operation == OperationType::Update
+                        || last_op.operation == OperationType::Update)
                     {
                         self.toast_manager
                             .info(format!("Undo not available for {:?}", last_op.operation));
                     }
-                }
-            }
             // Cmd+1-6: Switch tabs
             if ctx.input(|i| i.key_pressed(egui::Key::Num1)) {
                 self.tab_manager.switch_to(Tab::Installed);
@@ -568,21 +566,18 @@ impl eframe::App for BrewstyApp {
                 self.tab_manager.switch_to(Tab::Log);
             }
             // Cmd+A: Select all (in Outdated tab)
-            if ctx.input(|i| i.key_pressed(egui::Key::A)) {
-                if self.tab_manager.is_current(Tab::Installed) {
+            if ctx.input(|i| i.key_pressed(egui::Key::A))
+                && self.tab_manager.is_current(Tab::Installed) {
                     // Select all outdated packages
                 }
-            }
         }
 
         // Delete/Backspace: Uninstall selected package
-        if ctx.input(|i| i.key_pressed(egui::Key::Delete))
-            || ctx.input(|i| i.key_pressed(egui::Key::Backspace))
-        {
-            if self.tab_manager.is_current(Tab::Installed) {
+        if (ctx.input(|i| i.key_pressed(egui::Key::Delete))
+            || ctx.input(|i| i.key_pressed(egui::Key::Backspace)))
+            && self.tab_manager.is_current(Tab::Installed) {
                 // Handle uninstall of selected package
             }
-        }
 
         // Escape: Close modals
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {

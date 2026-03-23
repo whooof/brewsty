@@ -193,11 +193,10 @@ pub fn render_batch_queue(
                     ui.label(queued_op.operation.description());
 
                     // Remove button (only for pending)
-                    if matches!(queued_op.status, BatchOperationStatus::Pending) {
-                        if ui.small_button("✕").clicked() {
+                    if matches!(queued_op.status, BatchOperationStatus::Pending)
+                        && ui.small_button("✕").clicked() {
                             on_remove(idx);
                         }
-                    }
                 });
             }
         });

@@ -15,27 +15,14 @@ pub mod stats_dashboard;
 pub mod tab_manager;
 pub mod toast;
 
-pub use batch_queue::{
-    BatchOperation, BatchOperationStatus, BatchQueue, QueuedOperation, render_batch_queue,
-};
 pub use brewfile_modal::*;
 pub use cleanup_modal::{CleanupAction, CleanupModal, CleanupType};
 pub use filter_state::{FilterState, SortField, SortOrder};
-pub use history_timeline::{
-    TimelineEntry, group_by_date, history_to_timeline, render_grouped_timeline, render_timeline,
-};
 pub use info_modal::{InfoModal, InfoModalAction};
 pub use log_manager::{LogLevel, LogManager};
 pub use merged_package_list::MergedPackageList;
-pub use orphan_detection::{
-    OrphanDetectionResult, OrphanPackage, detect_orphans, render_orphan_detection,
-};
-pub use package_details_modal::{PackageDetailsAction, PackageDetailsModal};
 pub use package_list::PackageList;
 pub use selection_state::SelectionState;
 pub use service_list::{ServiceList, ServiceModalAction};
-pub use stats_dashboard::{
-    CategoryDistribution, OperationStats, PackageStats, render_stats_dashboard,
-};
 pub use tab_manager::{Tab, TabManager};
 pub use toast::ToastManager;

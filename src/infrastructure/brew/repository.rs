@@ -10,6 +10,12 @@ use std::path::Path;
 
 pub struct BrewPackageRepository;
 
+impl Default for BrewPackageRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BrewPackageRepository {
     pub fn new() -> Self {
         Self
