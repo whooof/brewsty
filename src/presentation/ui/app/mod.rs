@@ -50,6 +50,7 @@ pub struct BrewstyApp {
     pub(super) settings_message: Option<UserMessage>,
 
     pub(super) auto_load_version_info: bool,
+    pub(super) update_check_result: Option<crate::application::use_cases::UpdateCheckResult>,
 
     pub(super) initialized: bool,
 
@@ -156,6 +157,7 @@ impl BrewstyApp {
             services_message: None,
             settings_message: None,
             auto_load_version_info: false,
+            update_check_result: None,
             initialized: false,
             loading_installed: false,
             loading_outdated: false,
@@ -504,6 +506,8 @@ impl eframe::App for BrewstyApp {
             if matches!(self.preflight_state, LoadState::Ready(_)) {
                 self.load_installed_packages(self.config.auto_update_check);
                 self.load_services();
+                // Check for updates in background
+                self.check_for_updates_async();
             }
             self.apply_theme(ctx);
         }

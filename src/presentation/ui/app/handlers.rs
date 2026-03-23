@@ -1424,4 +1424,26 @@ impl BrewstyApp {
             }
         }
     }
+
+    pub(super) fn check_for_updates_async(&mut self) {
+        let shared = TaskSharedState::new();
+        let result = Arc::clone(&shared.result);
+        let logs = Arc::clone(&shared.logs);
+
+        self.executor.spawn(async move {
+            match crate::application::use_cases::check_for_updates().await {
+                Ok(Some(result)) => shared.set_success(format!(
+                    "New version available: {} → {}",
+                    result.current_version, result.latest_version
+                )),
+                Ok(None) => shared.set_success("No updates available".to_string()),
+                Err(e) => shared.set_failure(AppError::from_anyhow(e)),
+            }
+        });
+
+        self.task_manager.set_active_task(AsyncTask::CheckUpdates {
+            result,
+            logs,
+        });
+    }
 }

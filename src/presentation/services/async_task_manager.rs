@@ -96,6 +96,10 @@ pub enum AsyncTask {
         result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
     },
+    CheckUpdates {
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
+        logs: Arc<Mutex<Vec<String>>>,
+    },
     CleanupPreview {
         cleanup_type: crate::presentation::components::CleanupType,
         result: Arc<Mutex<Option<Result<CleanupPreview, AppError>>>>,
@@ -841,6 +845,7 @@ impl AsyncTaskManager {
                     }
                 }
                 AsyncTask::LoadPackageInfo { .. } => {}
+                AsyncTask::CheckUpdates { .. } => {}
             }
         }
 
