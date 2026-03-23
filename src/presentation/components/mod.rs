@@ -1,3 +1,4 @@
+pub mod batch_queue;
 pub mod brewfile_modal;
 pub mod cleanup_modal;
 pub mod filter_state;
@@ -14,6 +15,9 @@ pub mod stats_dashboard;
 pub mod tab_manager;
 pub mod toast;
 
+pub use batch_queue::{
+    BatchOperation, BatchOperationStatus, BatchQueue, QueuedOperation, render_batch_queue,
+};
 pub use brewfile_modal::*;
 pub use cleanup_modal::{CleanupAction, CleanupModal, CleanupType};
 pub use filter_state::{FilterState, SortField, SortOrder};
