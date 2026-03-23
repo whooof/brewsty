@@ -238,7 +238,7 @@ impl PackageRepository for BrewPackageRepository {
 
         let (output, sizes) = tokio::join!(
             tokio::task::spawn_blocking(move || BrewCommand::list_packages(package_type_clone)),
-            tokio::task::spawn_blocking(|| BrewCommand::get_installed_sizes())
+            tokio::task::spawn_blocking(BrewCommand::get_installed_sizes)
         );
 
         let output = output??;
