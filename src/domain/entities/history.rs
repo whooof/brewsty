@@ -184,6 +184,7 @@ impl OperationHistory {
     }
 
     /// Get a record by its unique ID.
+    #[allow(dead_code)]
     pub fn get(&self, id: u64) -> Option<&OperationRecord> {
         self.records.iter().find(|record| record.id == id)
     }
