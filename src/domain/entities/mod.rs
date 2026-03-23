@@ -14,6 +14,7 @@ pub use config::{AppConfig, ThemeMode};
 pub use doctor::{DoctorOutput, DoctorWarning};
 pub use history::{OperationHistory, OperationRecord, OperationType};
 pub use package::{CleanupItem, CleanupPreview, Package, PackageType};
+#[allow(unused_imports)] // Used in tests and other modules
 pub use package_category::PackageCategory;
 pub use package_list::{PackageList, PackageListItem};
 pub use service::{Service, ServiceInfo, ServiceStatus};
