@@ -36,14 +36,14 @@ impl SettingsTab {
         let mut actions = Vec::new();
 
         egui::ScrollArea::vertical().show(ui, |ui| {
-            ui.heading("Settings & Maintenance");
+            ui.heading("Preferences, Diagnostics, and Maintenance");
             ui.separator();
 
             ui.columns(3, |columns| {
-                // Column 1: General & Logs
+                // Column 1: Preferences & Logs
                 columns[0].vertical(|ui| {
                     ui.group(|ui| {
-                        ui.heading("General");
+                        ui.heading("Preferences");
 
                         ui.horizontal(|ui| {
                             ui.label("Theme:");
@@ -161,7 +161,7 @@ impl SettingsTab {
                     });
                 });
 
-                // Column 2: Maintenance & Doctor
+                // Column 2: Maintenance & Diagnostics
                 columns[1].vertical(|ui| {
                     ui.group(|ui| {
                         ui.heading("Maintenance");
@@ -191,10 +191,16 @@ impl SettingsTab {
 
                             ui.add_space(10.0);
 
-                            if ui.button("Update All Packages").clicked() {
+                            let danger_button = egui::Button::new(
+                                egui::RichText::new("Update All Packages")
+                                    .color(egui::Color32::WHITE)
+                                    .strong(),
+                            )
+                            .fill(egui::Color32::from_rgb(183, 28, 28));
+                            if ui.add(danger_button).clicked() {
                                 actions.push(SettingsAction::UpdateAll);
                             }
-                            ui.label("Update all installed");
+                            ui.label("Update all installed packages after confirmation");
                         });
                     });
 
@@ -247,10 +253,10 @@ impl SettingsTab {
                     });
                 });
 
-                // Column 3: Package Mgmt & Taps
+                // Column 3: Import/Export, Brewfile, Taps
                 columns[2].vertical(|ui| {
                     ui.group(|ui| {
-                        ui.heading("Management");
+                        ui.heading("Import / Export");
                         ui.vertical_centered(|ui| {
                             if ui
                                 .add_enabled(!loading_export, egui::Button::new("Export Packages"))
@@ -272,7 +278,7 @@ impl SettingsTab {
 
                             ui.add_space(15.0);
                             ui.separator();
-                            ui.heading("Brewfile Sync");
+                            ui.heading("Brewfile");
                             ui.add_space(5.0);
 
                             if ui
@@ -304,7 +310,7 @@ impl SettingsTab {
                     ui.add_space(10.0);
 
                     ui.group(|ui| {
-                        ui.heading("🔌 Taps");
+                        ui.heading("Taps");
                         ui.horizontal(|ui| {
                             if ui.button("Refresh Taps").clicked() {
                                 actions.push(SettingsAction::LoadTaps);
@@ -326,7 +332,12 @@ impl SettingsTab {
                                     for tap in taps {
                                         ui.horizontal(|ui| {
                                             ui.label(tap);
-                                            if ui.small_button("✕").clicked() {
+                                            let untap = egui::Button::new(
+                                                egui::RichText::new("Untap")
+                                                    .color(egui::Color32::WHITE),
+                                            )
+                                            .fill(egui::Color32::from_rgb(198, 40, 40));
+                                            if ui.add(untap).clicked() {
                                                 actions.push(SettingsAction::Untap(tap.clone()));
                                             }
                                         });

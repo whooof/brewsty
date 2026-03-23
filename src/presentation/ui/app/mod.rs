@@ -2,12 +2,15 @@ mod handlers;
 mod polling;
 
 use crate::application::UseCaseContainer;
-use crate::domain::entities::{AppConfig, OperationHistory, Package};
+use crate::domain::entities::{
+    AppConfig, AppError, LoadState, MessageSeverity, OperationHistory, OperationState, Package,
+    Service, UserMessage,
+};
 use crate::infrastructure::config_repository::ConfigRepository;
 use crate::presentation::components::{
     BrewfileSyncAction, BrewfileSyncModal, CleanupAction, CleanupModal, CleanupType, FilterState,
-    InfoModal, InfoModalAction, LogManager, MergedPackageList, PackageList, ServiceList, Tab,
-    TabManager, ToastManager,
+    InfoModal, InfoModalAction, LogManager, MergedPackageList, PackageList, ServiceList,
+    ServiceModalAction, Tab, TabManager, ToastManager,
 };
 use crate::presentation::services::{AsyncExecutor, AsyncTaskManager};
 use crate::presentation::ui::tabs::history::{HistoryAction, HistoryTab};
@@ -35,6 +38,16 @@ pub struct BrewstyApp {
     pub(super) merged_packages: MergedPackageList,
     pub(super) search_results: PackageList,
     pub(super) service_list: ServiceList,
+    pub(super) installed_state: LoadState<Vec<Package>>,
+    pub(super) outdated_state: LoadState<Vec<Package>>,
+    pub(super) search_state: LoadState<Vec<Package>>,
+    pub(super) services_state: LoadState<Vec<Service>>,
+    pub(super) taps_state: LoadState<Vec<String>>,
+    pub(super) preflight_state: LoadState<()>,
+    pub(super) installed_message: Option<UserMessage>,
+    pub(super) search_message: Option<UserMessage>,
+    pub(super) services_message: Option<UserMessage>,
+    pub(super) settings_message: Option<UserMessage>,
 
     pub(super) auto_load_version_info: bool,
 
@@ -63,6 +76,7 @@ pub struct BrewstyApp {
     pub(super) current_update_package: Option<String>,
     pub(super) pending_updates: Vec<Package>,
     pub(super) confirm_action: Option<ConfirmAction>,
+    pub(super) pending_settings_action: Option<SettingsDangerAction>,
     pub(super) packages_in_operation: std::collections::HashSet<String>,
     pub(super) services_in_operation: std::collections::HashSet<String>,
 
@@ -73,7 +87,9 @@ pub struct BrewstyApp {
 
     pub(super) loading: bool,
     pub(super) status_message: String,
+    pub(super) operation_state: OperationState,
     pub(super) output_panel_height: f32,
+    pub(super) show_bottom_log: bool,
     pub(super) doctor_output: Option<crate::domain::entities::DoctorOutput>,
     pub(super) taps: Vec<String>,
     pub(super) new_tap_name: String,
@@ -89,6 +105,12 @@ pub(super) enum ConfirmAction {
     Install(Package),
     Uninstall(Package),
     Update(Package),
+}
+
+#[derive(Clone, Debug)]
+pub(super) enum SettingsDangerAction {
+    UpdateAll,
+    Untap(String),
 }
 
 impl BrewstyApp {
@@ -123,6 +145,16 @@ impl BrewstyApp {
             merged_packages: MergedPackageList::new(),
             search_results: PackageList::new(),
             service_list: ServiceList::new(),
+            installed_state: LoadState::Idle,
+            outdated_state: LoadState::Idle,
+            search_state: LoadState::Idle,
+            services_state: LoadState::Idle,
+            taps_state: LoadState::Idle,
+            preflight_state: LoadState::Idle,
+            installed_message: None,
+            search_message: None,
+            services_message: None,
+            settings_message: None,
             auto_load_version_info: false,
             initialized: false,
             loading_installed: false,
@@ -146,6 +178,7 @@ impl BrewstyApp {
             current_update_package: None,
             pending_updates: Vec::new(),
             confirm_action: None,
+            pending_settings_action: None,
             packages_in_operation: std::collections::HashSet::new(),
             services_in_operation: std::collections::HashSet::new(),
             task_manager: AsyncTaskManager::new(),
@@ -153,7 +186,9 @@ impl BrewstyApp {
             executor,
             loading: false,
             status_message: String::new(),
+            operation_state: OperationState::Idle,
             output_panel_height: 250.0,
+            show_bottom_log: false,
             doctor_output: None,
             taps: Vec::new(),
             new_tap_name: String::new(),
@@ -193,6 +228,240 @@ impl BrewstyApp {
     fn apply_theme(&self, ctx: &egui::Context) {
         crate::presentation::style::configure_style(ctx, self.config.theme);
     }
+
+    fn set_operation_running(
+        &mut self,
+        kind: impl Into<std::borrow::Cow<'static, str>>,
+        target: Option<String>,
+    ) {
+        self.loading = true;
+        self.operation_state = OperationState::Running {
+            kind: kind.into(),
+            target,
+        };
+    }
+
+    fn set_operation_success(&mut self, message: impl Into<String>) {
+        let message = message.into();
+        self.loading = false;
+        self.status_message = message.clone();
+        self.operation_state = OperationState::Succeeded { message };
+    }
+
+    fn set_operation_failure(&mut self, error: AppError) {
+        self.loading = false;
+        self.status_message = error.short_message();
+        self.operation_state = OperationState::Failed { error };
+    }
+
+    fn status_text(&self) -> String {
+        match &self.operation_state {
+            OperationState::Idle => {
+                if self.status_message.is_empty() {
+                    "Ready".to_string()
+                } else {
+                    self.status_message.clone()
+                }
+            }
+            OperationState::Running { kind, target } => match target {
+                Some(target) => format!("{kind}: {target}"),
+                None => kind.to_string(),
+            },
+            OperationState::Succeeded { message } => message.clone(),
+            OperationState::Failed { error } => error.short_message(),
+        }
+    }
+
+    fn is_busy(&self) -> bool {
+        self.loading || matches!(self.operation_state, OperationState::Running { .. })
+    }
+
+    fn inline_message_ui(
+        ui: &mut egui::Ui,
+        message: &UserMessage,
+        allow_retry: bool,
+        allow_open_logs: bool,
+    ) -> (bool, bool) {
+        let dark_mode = ui.visuals().dark_mode;
+        let (fill, stroke, title_color, body_color, details_fill) = match message.severity {
+            MessageSeverity::Info => (
+                if dark_mode {
+                    egui::Color32::from_rgb(16, 55, 82)
+                } else {
+                    egui::Color32::from_rgb(218, 237, 250)
+                },
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(100, 181, 246)),
+                if dark_mode {
+                    egui::Color32::from_rgb(235, 245, 255)
+                } else {
+                    egui::Color32::from_rgb(19, 61, 86)
+                },
+                if dark_mode {
+                    egui::Color32::from_rgb(219, 237, 248)
+                } else {
+                    egui::Color32::from_rgb(32, 75, 101)
+                },
+                if dark_mode {
+                    egui::Color32::from_rgb(11, 37, 54)
+                } else {
+                    egui::Color32::from_rgb(242, 248, 252)
+                },
+            ),
+            MessageSeverity::Success => (
+                if dark_mode {
+                    egui::Color32::from_rgb(25, 74, 47)
+                } else {
+                    egui::Color32::from_rgb(225, 242, 229)
+                },
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(76, 175, 80)),
+                if dark_mode {
+                    egui::Color32::from_rgb(235, 250, 238)
+                } else {
+                    egui::Color32::from_rgb(31, 87, 40)
+                },
+                if dark_mode {
+                    egui::Color32::from_rgb(216, 243, 222)
+                } else {
+                    egui::Color32::from_rgb(43, 99, 52)
+                },
+                if dark_mode {
+                    egui::Color32::from_rgb(17, 49, 31)
+                } else {
+                    egui::Color32::from_rgb(243, 249, 244)
+                },
+            ),
+            MessageSeverity::Warning => (
+                if dark_mode {
+                    egui::Color32::from_rgb(89, 60, 8)
+                } else {
+                    egui::Color32::from_rgb(255, 244, 214)
+                },
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(255, 179, 0)),
+                if dark_mode {
+                    egui::Color32::from_rgb(255, 244, 218)
+                } else {
+                    egui::Color32::from_rgb(112, 74, 0)
+                },
+                if dark_mode {
+                    egui::Color32::from_rgb(255, 236, 194)
+                } else {
+                    egui::Color32::from_rgb(126, 87, 10)
+                },
+                if dark_mode {
+                    egui::Color32::from_rgb(58, 40, 7)
+                } else {
+                    egui::Color32::from_rgb(255, 250, 239)
+                },
+            ),
+            MessageSeverity::Error => (
+                if dark_mode {
+                    egui::Color32::from_rgb(94, 24, 28)
+                } else {
+                    egui::Color32::from_rgb(252, 228, 230)
+                },
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(229, 57, 53)),
+                if dark_mode {
+                    egui::Color32::from_rgb(255, 236, 238)
+                } else {
+                    egui::Color32::from_rgb(112, 24, 24)
+                },
+                if dark_mode {
+                    egui::Color32::from_rgb(255, 225, 228)
+                } else {
+                    egui::Color32::from_rgb(127, 37, 37)
+                },
+                if dark_mode {
+                    egui::Color32::from_rgb(63, 17, 21)
+                } else {
+                    egui::Color32::from_rgb(255, 244, 245)
+                },
+            ),
+        };
+
+        let mut retry = false;
+        let mut open_logs = false;
+
+        egui::Frame::group(ui.style())
+            .fill(fill)
+            .stroke(stroke)
+            .show(ui, |ui| {
+                ui.vertical(|ui| {
+                    ui.label(
+                        egui::RichText::new(&message.title)
+                            .strong()
+                            .color(title_color),
+                    );
+                    ui.label(egui::RichText::new(&message.body).color(body_color));
+                    if let Some(details) = &message.details {
+                        egui::CollapsingHeader::new("Details")
+                            .id_salt(format!("details_{}", message.title))
+                            .show(ui, |ui| {
+                                egui::Frame::group(ui.style())
+                                    .fill(details_fill)
+                                    .show(ui, |ui| {
+                                        ui.monospace(
+                                            egui::RichText::new(details).color(body_color),
+                                        );
+                                    });
+                            });
+                    }
+                    ui.horizontal(|ui| {
+                        if allow_retry
+                            && ui
+                                .button(
+                                    message
+                                        .recovery_action
+                                        .clone()
+                                        .unwrap_or_else(|| "Retry".to_string()),
+                                )
+                                .clicked()
+                        {
+                            retry = true;
+                        }
+                        if allow_open_logs && ui.button("Open Logs").clicked() {
+                            open_logs = true;
+                        }
+                    });
+                });
+            });
+
+        (retry, open_logs)
+    }
+
+    fn run_preflight_checks(&mut self) {
+        self.preflight_state = LoadState::Loading;
+
+        let config_dir = dirs::config_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("brewsty");
+
+        let ensure_dir = std::fs::create_dir_all(&config_dir).map_err(|error| {
+            AppError::Config(format!("Cannot create config directory: {}", error))
+        });
+        if let Err(error) = ensure_dir {
+            self.preflight_state = LoadState::Error(error);
+            return;
+        }
+
+        let brew_check = crate::infrastructure::brew::command::BrewCommand::list_taps()
+            .map(|_| ())
+            .map_err(AppError::from_anyhow);
+        if let Err(error) = brew_check {
+            self.preflight_state = LoadState::Error(error);
+            return;
+        }
+
+        let services_check =
+            crate::infrastructure::brew::command::BrewCommand::list_services_json()
+                .map(|_| ())
+                .map_err(AppError::from_anyhow);
+        if let Err(error) = services_check {
+            self.preflight_state = LoadState::Error(error);
+            return;
+        }
+
+        self.preflight_state = LoadState::Ready(());
+    }
 }
 
 pub fn format_size(bytes: u64) -> String {
@@ -231,8 +500,11 @@ impl eframe::App for BrewstyApp {
 
         if !self.initialized {
             self.initialized = true;
-            self.load_installed_packages(self.config.auto_update_check);
-            self.load_services();
+            self.run_preflight_checks();
+            if matches!(self.preflight_state, LoadState::Ready(_)) {
+                self.load_installed_packages(self.config.auto_update_check);
+                self.load_services();
+            }
             self.apply_theme(ctx);
         }
 
@@ -330,20 +602,24 @@ impl eframe::App for BrewstyApp {
             });
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                if self.loading {
+                if self.is_busy() {
                     ui.spinner();
                 }
-                let status_text = if self.status_message.is_empty() {
-                    "Ready"
+                ui.label(egui::RichText::new(self.status_text()).small());
+                ui.separator();
+                let toggle_label = if self.show_bottom_log {
+                    "Hide Bottom Log"
                 } else {
-                    &self.status_message
+                    "Show Bottom Log"
                 };
-                ui.label(egui::RichText::new(status_text).small());
+                if ui.small_button(toggle_label).clicked() {
+                    self.show_bottom_log = !self.show_bottom_log;
+                }
             });
             ui.add_space(8.0);
         });
 
-        if self.tab_manager.current() != Tab::Log {
+        if self.tab_manager.current() != Tab::Log && self.show_bottom_log {
             egui::TopBottomPanel::bottom("bottom_panel")
                 .resizable(true)
                 .default_height(self.output_panel_height)
@@ -396,15 +672,51 @@ impl eframe::App for BrewstyApp {
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            if let LoadState::Error(error) = self.preflight_state.clone() {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(40.0);
+                    ui.heading("Startup checks failed");
+                    ui.add_space(8.0);
+                    let message = error
+                        .to_user_message("Brewsty could not start")
+                        .with_recovery_action("Retry startup checks");
+                    let (retry, open_logs) =
+                        Self::inline_message_ui(ui, &message, true, true);
+                    if retry {
+                        self.run_preflight_checks();
+                        if matches!(self.preflight_state, LoadState::Ready(_)) {
+                            self.load_installed_packages(self.config.auto_update_check);
+                            self.load_services();
+                        }
+                    }
+                    if open_logs {
+                        self.tab_manager.switch_to(Tab::Log);
+                    }
+                });
+                self.toast_manager.show(ctx);
+                return;
+            }
+
             match self.tab_manager.current() {
                 Tab::Installed => {
+                    if let Some(message) = self.installed_message.clone() {
+                        let (retry, open_logs) =
+                            Self::inline_message_ui(ui, &message, true, true);
+                        ui.add_space(8.0);
+                        if retry {
+                            self.load_installed_packages(true);
+                        }
+                        if open_logs {
+                            self.tab_manager.switch_to(Tab::Log);
+                        }
+                    }
                     let actions = InstalledTab::show(
                         ui,
                         &mut self.merged_packages,
                         &mut self.filter_state,
                         &self.packages_in_operation,
-                        self.loading_installed,
-                        self.loading_outdated,
+                        self.installed_state.is_loading(),
+                        self.outdated_state.is_loading(),
                         &mut self.info_modal,
                     );
 
@@ -427,12 +739,23 @@ impl eframe::App for BrewstyApp {
                 }
 
                 Tab::SearchInstall => {
+                    if let Some(message) = self.search_message.clone() {
+                        let (retry, open_logs) =
+                            Self::inline_message_ui(ui, &message, true, true);
+                        ui.add_space(8.0);
+                        if retry {
+                            self.handle_search();
+                        }
+                        if open_logs {
+                            self.tab_manager.switch_to(Tab::Log);
+                        }
+                    }
                     let actions = SearchTab::show(
                         ui,
                         &mut self.search_results,
                         &mut self.filter_state,
                         &self.packages_in_operation,
-                        self.loading_search,
+                        self.search_state.is_loading(),
                         &mut self.auto_load_version_info,
                         &mut self.info_modal,
                     );
@@ -458,11 +781,22 @@ impl eframe::App for BrewstyApp {
                 }
 
                 Tab::Services => {
+                    if let Some(message) = self.services_message.clone() {
+                        let (retry, open_logs) =
+                            Self::inline_message_ui(ui, &message, true, true);
+                        ui.add_space(8.0);
+                        if retry {
+                            self.load_services();
+                        }
+                        if open_logs {
+                            self.tab_manager.switch_to(Tab::Log);
+                        }
+                    }
                     let actions = ServicesTab::show(
                         ui,
                         &mut self.service_list,
                         &self.services_in_operation,
-                        self.loading_services,
+                        self.services_state.is_loading(),
                     );
 
                     for action in actions {
@@ -501,6 +835,17 @@ impl eframe::App for BrewstyApp {
 
                 Tab::Settings => {
                     tracing::trace!("Rendering Settings Tab");
+                    if let Some(message) = self.settings_message.clone() {
+                        let (retry, open_logs) =
+                            Self::inline_message_ui(ui, &message, true, true);
+                        ui.add_space(8.0);
+                        if retry {
+                            self.load_taps();
+                        }
+                        if open_logs {
+                            self.tab_manager.switch_to(Tab::Log);
+                        }
+                    }
                     let actions = SettingsTab::show(
                         ui,
                         &mut self.config,
@@ -521,13 +866,18 @@ impl eframe::App for BrewstyApp {
                             SettingsAction::ShowCleanupPreview(cleanup_type) => {
                                 self.show_cleanup_preview(cleanup_type)
                             }
-                            SettingsAction::UpdateAll => self.handle_update_all(),
+                            SettingsAction::UpdateAll => {
+                                self.pending_settings_action = Some(SettingsDangerAction::UpdateAll)
+                            }
                             SettingsAction::ExportPackages => self.handle_export_packages(),
                             SettingsAction::ImportPackages => self.handle_import_packages(),
                             SettingsAction::RunDoctor => self.handle_doctor(),
                             SettingsAction::LoadTaps => self.load_taps(),
                             SettingsAction::Tap(name) => self.handle_tap(name),
-                            SettingsAction::Untap(name) => self.handle_untap(name),
+                            SettingsAction::Untap(name) => {
+                                self.pending_settings_action =
+                                    Some(SettingsDangerAction::Untap(name))
+                            }
                             SettingsAction::ExportBrewfile => self.handle_bundle_dump(),
                             SettingsAction::SyncBrewfile => self.handle_bundle_check_preview(),
                         }
@@ -583,8 +933,12 @@ impl eframe::App for BrewstyApp {
             }
 
             // Handle service detail modal (info + log)
-            if let Some(log_request) = self.service_list.render_detail_modal(ctx) {
-                self.handle_service_log(log_request);
+            if let Some(action) = self.service_list.render_detail_modal(ctx) {
+                match action {
+                    ServiceModalAction::ReloadInfo(name) => self.handle_service_info(name),
+                    ServiceModalAction::LoadLog(name) => self.handle_service_log(name),
+                    ServiceModalAction::OpenPath(path) => self.handle_open_path(path),
+                }
             }
 
             // Handle info modal dependency loading
@@ -650,6 +1004,40 @@ impl eframe::App for BrewstyApp {
                             }
                             if ui.button("Cancel").clicked() {
                                 self.confirm_action = None;
+                            }
+                        });
+                    });
+            }
+
+            if let Some(action) = self.pending_settings_action.clone() {
+                let (title, description) = match &action {
+                    SettingsDangerAction::UpdateAll => (
+                        "Confirm Update All".to_string(),
+                        "Update all installed packages? This can take a while and may require your administrator password.".to_string(),
+                    ),
+                    SettingsDangerAction::Untap(name) => (
+                        "Confirm Untap".to_string(),
+                        format!("Untap {}? This may affect packages that depend on that tap.", name),
+                    ),
+                };
+
+                egui::Window::new(title)
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .show(ctx, |ui| {
+                        ui.label(description);
+                        ui.add_space(12.0);
+                        ui.horizontal(|ui| {
+                            if ui.button("Confirm").clicked() {
+                                match action {
+                                    SettingsDangerAction::UpdateAll => self.handle_update_all(),
+                                    SettingsDangerAction::Untap(name) => self.handle_untap(name),
+                                }
+                                self.pending_settings_action = None;
+                            }
+                            if ui.button("Cancel").clicked() {
+                                self.pending_settings_action = None;
                             }
                         });
                     });

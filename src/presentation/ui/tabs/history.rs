@@ -157,22 +157,19 @@ impl HistoryTab {
                     });
                     row.col(|ui| {
                         padded_cell(ui, |ui| {
-                            if record.is_undoable() {
-                                if ui
+                            if record.is_undoable()
+                                && ui
                                     .button("\u{21A9}")
                                     .on_hover_text("Undo this operation")
                                     .clicked()
-                                {
-                                    if let Some(reverse) = record.operation.reverse() {
-                                        if let Some(target) = &record.target {
-                                            actions.push(HistoryAction::Undo(UndoRequest {
-                                                reverse_operation: reverse,
-                                                target: target.clone(),
-                                                package_type: record.package_type,
-                                            }));
-                                        }
-                                    }
-                                }
+                                && let Some(reverse) = record.operation.reverse()
+                                && let Some(target) = &record.target
+                            {
+                                actions.push(HistoryAction::Undo(UndoRequest {
+                                    reverse_operation: reverse,
+                                    target: target.clone(),
+                                    package_type: record.package_type,
+                                }));
                             }
                         })
                     });
