@@ -298,12 +298,12 @@ impl BrewCommand {
 
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split('\t').collect();
-            if parts.len() == 2
-                && let Ok(size_kb) = parts[0].parse::<u64>()
-            {
-                let path = parts[1];
-                if let Some(name) = path.split('/').next_back() {
-                    sizes.insert(name.to_string(), size_kb * 1024);
+            if parts.len() == 2 {
+                if let Ok(size_kb) = parts[0].parse::<u64>() {
+                    let path = parts[1];
+                    if let Some(name) = path.split('/').next_back() {
+                        sizes.insert(name.to_string(), size_kb * 1024);
+                    }
                 }
             }
         }
