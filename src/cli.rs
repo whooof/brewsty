@@ -112,6 +112,7 @@ pub enum Commands {
 /// Output formatter for CLI
 pub struct OutputFormatter {
     format: String,
+    #[allow(dead_code)] // Reserved for future verbose output mode
     verbose: bool,
 }
 

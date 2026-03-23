@@ -1,4 +1,9 @@
 //! Brewfile support - parse, generate, and sync Homebrew Bundles
+//!
+//! Note: This module contains placeholder functions for future Brewfile support.
+//! Dead code warnings are expected and suppressed.
+
+#![allow(dead_code)]
 
 use crate::domain::entities::PackageType;
 use anyhow::{Context, Result};
@@ -130,11 +135,12 @@ pub fn parse_brewfile_ruby(content: &str) -> Result<Brewfile> {
             }
         }
         // Parse cask
-        else if line.starts_with("cask ")
-            && let Some(name) = extract_quoted_string(line) {
+        else if line.starts_with("cask ") {
+            if let Some(name) = extract_quoted_string(line) {
                 let version = extract_cask_version(line);
                 brewfile.add_cask(name, version);
             }
+        }
     }
 
     Ok(brewfile)

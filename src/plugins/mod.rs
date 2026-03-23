@@ -112,6 +112,7 @@ impl Plugin for WasmPlugin {
 /// Plugin manager for loading and managing plugins
 pub struct PluginManager {
     plugins: HashMap<String, Box<dyn Plugin>>,
+    #[allow(dead_code)] // Reserved for future WASM plugin enhancements
     engine: Arc<Engine>,
 }
 
@@ -184,7 +185,7 @@ impl PluginManager {
                         .and_then(|s| s.to_str())
                         .unwrap_or("unknown")
                         .to_string();
-                    if let Ok(_) = self.load_plugin(&name, &path) {
+                    if self.load_plugin(&name, &path).is_ok() {
                         loaded += 1;
                     }
                 }
