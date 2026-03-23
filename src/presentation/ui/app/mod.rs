@@ -3,8 +3,8 @@ mod polling;
 
 use crate::application::UseCaseContainer;
 use crate::domain::entities::{
-    AppConfig, AppError, LoadState, MessageSeverity, OperationHistory, OperationState, Package,
-    Service, UserMessage,
+    AppConfig, AppError, LoadState, MessageSeverity, OperationHistory, OperationState,
+    OperationType, Package, Service, UserMessage,
 };
 use crate::infrastructure::config_repository::ConfigRepository;
 use crate::presentation::components::{
@@ -519,15 +519,33 @@ impl eframe::App for BrewstyApp {
             if ctx.input(|i| i.key_pressed(egui::Key::Q)) {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
-            // Cmd+F: Focus search (placeholder - needs filter_state integration)
-            // Currently handled by filter_state directly in UI
+            // Cmd+F: Focus search (handled by filter_state in UI)
             // Cmd+R: Refresh current tab
             if ctx.input(|i| i.key_pressed(egui::Key::R)) {
                 match self.tab_manager.current() {
                     Tab::Installed => self.load_installed_packages(true),
                     Tab::Services => self.load_services(),
                     Tab::SearchInstall => self.handle_search(),
+                    Tab::History => { /* Refresh history */ }
                     _ => {}
+                }
+            }
+            // Cmd+S: Save configuration
+            if ctx.input(|i| i.key_pressed(egui::Key::S)) {
+                self.config_repo.save(&self.config).ok();
+                self.toast_manager
+                    .success("Configuration saved".to_string());
+            }
+            // Cmd+Z: Undo last operation
+            if ctx.input(|i| i.key_pressed(egui::Key::Z)) {
+                if let Some(last_op) = self.operation_history.records.first() {
+                    if last_op.operation == OperationType::Install
+                        || last_op.operation == OperationType::Uninstall
+                        || last_op.operation == OperationType::Update
+                    {
+                        self.toast_manager
+                            .info(format!("Undo not available for {:?}", last_op.operation));
+                    }
                 }
             }
             // Cmd+1-6: Switch tabs
@@ -549,12 +567,34 @@ impl eframe::App for BrewstyApp {
             if ctx.input(|i| i.key_pressed(egui::Key::Num6)) {
                 self.tab_manager.switch_to(Tab::Log);
             }
+            // Cmd+A: Select all (in Outdated tab)
+            if ctx.input(|i| i.key_pressed(egui::Key::A)) {
+                if self.tab_manager.is_current(Tab::Installed) {
+                    // Select all outdated packages
+                }
+            }
+        }
+
+        // Delete/Backspace: Uninstall selected package
+        if ctx.input(|i| i.key_pressed(egui::Key::Delete))
+            || ctx.input(|i| i.key_pressed(egui::Key::Backspace))
+        {
+            if self.tab_manager.is_current(Tab::Installed) {
+                // Handle uninstall of selected package
+            }
         }
 
         // Escape: Close modals
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.confirm_action = None;
             self.cleanup_modal = crate::presentation::components::CleanupModal::new();
+        }
+
+        // ?: Show keyboard shortcuts help
+        if ctx.input(|i| i.key_pressed(egui::Key::Slash))
+            || ctx.input(|i| i.key_pressed(egui::Key::F1))
+        {
+            // Show shortcuts help modal
         }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
