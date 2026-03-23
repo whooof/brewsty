@@ -44,7 +44,7 @@ pub fn export_packages_to_json(packages: &[Package], path: &Path) -> Result<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::entities::PackageType;
+    use crate::domain::entities::{Package, PackageType};
     use tempfile::tempdir;
 
     #[test]
@@ -52,15 +52,27 @@ mod tests {
         let packages = vec![
             Package {
                 name: "git".to_string(),
-                version: "2.42.0".to_string(),
+                version: Some("2.42.0".to_string()),
+                available_version: None,
+                description: None,
                 package_type: PackageType::Formula,
+                installed: true,
                 outdated: false,
+                version_load_failed: false,
+                pinned: false,
+                installed_size: None,
             },
             Package {
                 name: "visual-studio-code".to_string(),
-                version: "1.85.0".to_string(),
+                version: Some("1.85.0".to_string()),
+                available_version: None,
+                description: None,
                 package_type: PackageType::Cask,
+                installed: true,
                 outdated: false,
+                version_load_failed: false,
+                pinned: false,
+                installed_size: None,
             },
         ];
 

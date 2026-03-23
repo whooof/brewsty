@@ -24,6 +24,7 @@ rfd = "0.17"
 egui_extras = "0.33"
 tracing-appender = "0.2.4"
 toml = "1.0.7"
+reqwest = { version = "0.13.2", features = ["json"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
