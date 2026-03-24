@@ -9,8 +9,9 @@ use crate::domain::entities::{
 use crate::infrastructure::config_repository::ConfigRepository;
 use crate::presentation::components::{
     BrewfileSyncAction, BrewfileSyncModal, CleanupAction, CleanupModal, CleanupType, FilterState,
-    InfoModal, InfoModalAction, LogManager, MergedPackageList, PackageList, ServiceList,
-    ServiceModalAction, Tab, TabManager, ToastManager,
+    InfoModal, InfoModalAction, LogManager, MergedPackageList, PackageDetailsAction,
+    PackageDetailsModal, PackageList, ServiceList, ServiceModalAction, Tab, TabManager,
+    ToastManager,
 };
 use crate::presentation::services::{AsyncExecutor, AsyncTaskManager};
 use crate::presentation::ui::tabs::history::{HistoryAction, HistoryTab};
@@ -31,6 +32,7 @@ pub struct BrewstyApp {
 
     pub(super) cleanup_modal: CleanupModal,
     pub(super) info_modal: InfoModal,
+    pub(super) package_details_modal: PackageDetailsModal,
     pub(super) log_manager: LogManager,
     pub(super) toast_manager: ToastManager,
     pub(super) log_rx: Receiver<String>,
@@ -141,6 +143,7 @@ impl BrewstyApp {
 
             cleanup_modal: CleanupModal::new(),
             info_modal: InfoModal::new(),
+            package_details_modal: PackageDetailsModal::new(),
             log_manager: LogManager::new(),
             toast_manager: ToastManager::new(),
             log_rx,
@@ -777,7 +780,7 @@ impl eframe::App for BrewstyApp {
                         &self.packages_in_operation,
                         self.installed_state.is_loading(),
                         self.outdated_state.is_loading(),
-                        &mut self.info_modal,
+                        &mut self.package_details_modal,
                     );
 
                     for action in actions {
@@ -791,8 +794,8 @@ impl eframe::App for BrewstyApp {
                             }
                             InstalledAction::Pin(pkg) => self.handle_pin(pkg),
                             InstalledAction::Unpin(pkg) => self.handle_unpin(pkg),
-                            InstalledAction::LoadInfo(name, pkg_type) => {
-                                self.load_package_info(name, pkg_type)
+                            InstalledAction::ShowPackageDetails(package_name) => {
+                                self.show_package_details(&package_name);
                             }
                         }
                     }
@@ -817,7 +820,7 @@ impl eframe::App for BrewstyApp {
                         &self.packages_in_operation,
                         self.search_state.is_loading(),
                         &mut self.auto_load_version_info,
-                        &mut self.info_modal,
+                        &mut self.package_details_modal,
                     );
 
                     for action in actions {
@@ -831,8 +834,8 @@ impl eframe::App for BrewstyApp {
                             SearchAction::Install(pkg) => self.maybe_confirm_install(pkg),
                             SearchAction::Uninstall(pkg) => self.maybe_confirm_uninstall(pkg),
                             SearchAction::Update(pkg) => self.maybe_confirm_update(pkg),
-                            SearchAction::LoadInfo(name, pkg_type) => {
-                                self.load_package_info(name, pkg_type)
+                            SearchAction::ShowPackageDetails(package_name) => {
+                                self.show_package_details(&package_name);
                             }
                             SearchAction::Pin(pkg) => self.handle_pin(pkg),
                             SearchAction::Unpin(pkg) => self.handle_unpin(pkg),
@@ -1101,6 +1104,25 @@ impl eframe::App for BrewstyApp {
                             }
                         });
                     });
+            }
+
+            // Package Details Modal
+            match self.package_details_modal.show(ctx) {
+                PackageDetailsAction::Install(name) => {
+                    if let Some(pkg) = self.search_results.get_package(&name)
+                        .or_else(|| self.merged_packages.get_package(&name))
+                    {
+                        self.maybe_confirm_install(pkg);
+                    }
+                }
+                PackageDetailsAction::Uninstall(name) => {
+                    if let Some(pkg) = self.merged_packages.get_package(&name)
+                        .or_else(|| self.search_results.get_package(&name))
+                    {
+                        self.maybe_confirm_uninstall(pkg);
+                    }
+                }
+                PackageDetailsAction::Close | PackageDetailsAction::None => {}
             }
         });
 

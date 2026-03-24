@@ -8,6 +8,7 @@ pub struct PackageDetailsModal {
     pub open: bool,
     pub details: Option<PackageDetails>,
     pub loading: bool,
+    pub pending_package: Option<String>,
 }
 
 impl PackageDetailsModal {
@@ -82,18 +83,20 @@ impl PackageDetailsModal {
 
             // Homepage and repo links
             ui.horizontal(|ui| {
-                if let Some(homepage) = &details.homepage
-                    && ui.link("🌐 Homepage").clicked()
-                    && let Err(e) = open::that(homepage)
-                {
-                    log::warn!("Failed to open homepage: {}", e);
+                if let Some(homepage) = &details.homepage {
+                    if ui.link("🌐 Homepage").clicked() {
+                        if let Err(e) = open::that(homepage) {
+                            log::warn!("Failed to open homepage: {}", e);
+                        }
+                    }
                 }
 
-                if let Some(repo) = &details.repo_url
-                    && ui.link("📁 Repository").clicked()
-                    && let Err(e) = open::that(repo)
-                {
-                    log::warn!("Failed to open repo: {}", e);
+                if let Some(repo) = &details.repo_url {
+                    if ui.link("📁 Repository").clicked() {
+                        if let Err(e) = open::that(repo) {
+                            log::warn!("Failed to open repo: {}", e);
+                        }
+                    }
                 }
             });
             ui.add_space(8.0);
@@ -138,13 +141,13 @@ impl PackageDetailsModal {
             }
 
             // Caveats
-            if let Some(caveats) = &details.caveats
-                && !caveats.trim().is_empty()
-            {
-                ui.label(RichText::new("⚠️ Caveats").strong());
-                ui.group(|ui| {
-                    ui.label(caveats);
-                });
+            if let Some(caveats) = &details.caveats {
+                if !caveats.trim().is_empty() {
+                    ui.label(RichText::new("⚠️ Caveats").strong());
+                    ui.group(|ui| {
+                        ui.label(caveats);
+                    });
+                }
             }
 
             ui.add_space(16.0);
@@ -184,6 +187,24 @@ impl PackageDetailsModal {
         self.open = false;
         self.details = None;
         self.loading = false;
+    }
+
+    pub fn open_for_package(&mut self, package: &crate::domain::entities::Package) {
+        self.set_loading();
+        self.pending_package = Some(package.name.clone());
+    }
+
+    pub fn open_for_package_name(&mut self, package_name: String) {
+        self.set_loading();
+        self.pending_package = Some(package_name);
+    }
+
+    pub fn set_pending_package(&mut self, name: String) {
+        self.pending_package = Some(name);
+    }
+
+    pub fn take_pending_package(&mut self) -> Option<String> {
+        self.pending_package.take()
     }
 }
 

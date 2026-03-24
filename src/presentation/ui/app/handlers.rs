@@ -1444,4 +1444,10 @@ impl BrewstyApp {
         self.task_manager
             .set_active_task(AsyncTask::CheckUpdates { result, logs });
     }
+
+    pub(super) fn show_package_details(&mut self, package_name: &str) {
+        self.package_details_modal
+            .open_for_package_name(package_name.to_string());
+        self.load_package_info(package_name.to_string(), PackageType::Formula);
+    }
 }

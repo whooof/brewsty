@@ -1,5 +1,5 @@
 use crate::domain::entities::{Package, PackageType};
-use crate::presentation::components::{FilterState, InfoModal, PackageList};
+use crate::presentation::components::{FilterState, PackageDetailsModal, PackageList};
 use eframe::egui;
 use std::collections::HashSet;
 
@@ -9,7 +9,7 @@ pub enum SearchAction {
     Install(Package),
     Uninstall(Package),
     Update(Package),
-    LoadInfo(String, PackageType),
+    ShowPackageDetails(String),
     Pin(Package),
     Unpin(Package),
 }
@@ -25,7 +25,7 @@ impl SearchTab {
         packages_in_operation: &HashSet<String>,
         loading_search: bool,
         auto_load_version_info: &mut bool,
-        info_modal: &mut InfoModal,
+        package_details_modal: &mut PackageDetailsModal,
     ) -> Vec<SearchAction> {
         let mut actions = Vec::new();
 
@@ -93,7 +93,7 @@ impl SearchTab {
                 actions.push(SearchAction::Update(package));
             }
             if let Some(package) = load_info_action {
-                actions.push(SearchAction::LoadInfo(package.name, package.package_type));
+                actions.push(SearchAction::ShowPackageDetails(package.name.clone()));
             }
             if let Some(package) = pin_action {
                 actions.push(SearchAction::Pin(package));
@@ -102,7 +102,7 @@ impl SearchTab {
                 actions.push(SearchAction::Unpin(package));
             }
             if let Some(package) = search_results.get_show_info_action() {
-                info_modal.show(package);
+                package_details_modal.open_for_package(&package);
             }
         }
 

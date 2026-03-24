@@ -21,6 +21,7 @@ pub use filter_state::{FilterState, SortField, SortOrder};
 pub use info_modal::{InfoModal, InfoModalAction};
 pub use log_manager::{LogLevel, LogManager};
 pub use merged_package_list::MergedPackageList;
+pub use package_details_modal::{PackageDetailsAction, PackageDetailsModal};
 pub use package_list::PackageList;
 pub use selection_state::SelectionState;
 pub use service_list::{ServiceList, ServiceModalAction};
