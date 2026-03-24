@@ -128,6 +128,49 @@ impl SettingsTab {
                                 }
                             });
                         }
+
+                        ui.separator();
+
+                        // Desktop Notifications
+                        ui.heading("Desktop Notifications");
+                        if ui
+                            .checkbox(&mut config.notifications.enabled, "Enable notifications")
+                            .changed()
+                        {
+                            actions.push(SettingsAction::SaveConfig);
+                        }
+
+                        if config.notifications.enabled {
+                            ui.indent("notification_options", |ui| {
+                                if ui
+                                    .checkbox(
+                                        &mut config.notifications.show_on_install,
+                                        "Show on install/uninstall",
+                                    )
+                                    .changed()
+                                {
+                                    actions.push(SettingsAction::SaveConfig);
+                                }
+                                if ui
+                                    .checkbox(
+                                        &mut config.notifications.show_on_update,
+                                        "Show on update",
+                                    )
+                                    .changed()
+                                {
+                                    actions.push(SettingsAction::SaveConfig);
+                                }
+                                if ui
+                                    .checkbox(
+                                        &mut config.notifications.show_on_error,
+                                        "Show on errors",
+                                    )
+                                    .changed()
+                                {
+                                    actions.push(SettingsAction::SaveConfig);
+                                }
+                            });
+                        }
                     });
 
                     ui.add_space(10.0);

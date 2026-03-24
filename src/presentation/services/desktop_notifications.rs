@@ -30,7 +30,7 @@ pub fn send_notification(
 ) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
-        use mac_notification_sys::{Notification, set_application};
+        use mac_notification_sys::{set_application, Notification};
 
         // Set the application name for notifications
         set_application("Brewsty").ok();
@@ -74,89 +74,9 @@ pub fn notify_error(title: &str, message: &str) {
     let _ = send_notification(title, message, NotificationType::Error);
 }
 
-/// Notification configuration
-#[derive(Debug, Clone)]
-pub struct NotificationConfig {
-    pub enabled: bool,
-    #[allow(dead_code)]
-    pub show_on_install: bool,
-    #[allow(dead_code)]
-    pub show_on_uninstall: bool,
-    #[allow(dead_code)]
-    pub show_on_update: bool,
-    pub show_on_error: bool,
-}
-
-impl Default for NotificationConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            show_on_install: true,
-            show_on_uninstall: true,
-            show_on_update: true,
-            show_on_error: true,
-        }
-    }
-}
-
-impl NotificationConfig {
-    #[allow(dead_code)]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    #[allow(dead_code)]
-    pub fn should_notify(&self, notification_type: NotificationType) -> bool {
-        if !self.enabled {
-            return false;
-        }
-
-        match notification_type {
-            NotificationType::Info => true,
-            NotificationType::Success => true,
-            NotificationType::Warning => true,
-            NotificationType::Error => self.show_on_error,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_notification_config_default() {
-        let config = NotificationConfig::default();
-        assert!(config.enabled);
-        assert!(config.show_on_install);
-        assert!(config.show_on_uninstall);
-        assert!(config.show_on_update);
-        assert!(config.show_on_error);
-    }
-
-    #[test]
-    fn test_notification_config_should_notify() {
-        let mut config = NotificationConfig::default();
-
-        // All notifications enabled
-        assert!(config.should_notify(NotificationType::Info));
-        assert!(config.should_notify(NotificationType::Success));
-        assert!(config.should_notify(NotificationType::Warning));
-        assert!(config.should_notify(NotificationType::Error));
-
-        // Disable all
-        config.enabled = false;
-        assert!(!config.should_notify(NotificationType::Info));
-        assert!(!config.should_notify(NotificationType::Success));
-        assert!(!config.should_notify(NotificationType::Warning));
-        assert!(!config.should_notify(NotificationType::Error));
-
-        // Re-enable but disable errors
-        config.enabled = true;
-        config.show_on_error = false;
-        assert!(config.should_notify(NotificationType::Info));
-        assert!(!config.should_notify(NotificationType::Error));
-    }
 
     #[test]
     fn test_notification_type_icon() {

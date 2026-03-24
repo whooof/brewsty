@@ -8,6 +8,10 @@ fn default_debounce_delay() -> u64 {
     2000 // 2 seconds
 }
 
+fn default_notification_config() -> NotificationConfig {
+    NotificationConfig::default()
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AppConfig {
     pub theme: ThemeMode,
@@ -19,6 +23,35 @@ pub struct AppConfig {
 
     #[serde(default = "default_debounce_delay")]
     pub search_debounce_delay: u64, // in milliseconds
+
+    #[serde(default = "default_notification_config")]
+    pub notifications: NotificationConfig,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct NotificationConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub show_on_install: bool,
+    #[serde(default = "default_true")]
+    pub show_on_uninstall: bool,
+    #[serde(default = "default_true")]
+    pub show_on_update: bool,
+    #[serde(default = "default_true")]
+    pub show_on_error: bool,
+}
+
+impl Default for NotificationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            show_on_install: true,
+            show_on_uninstall: true,
+            show_on_update: true,
+            show_on_error: true,
+        }
+    }
 }
 
 impl Default for AppConfig {
@@ -29,6 +62,7 @@ impl Default for AppConfig {
             confirm_before_actions: true,
             search_debounce_enabled: true,
             search_debounce_delay: 2000,
+            notifications: NotificationConfig::default(),
         }
     }
 }
@@ -62,6 +96,7 @@ mod tests {
             confirm_before_actions: true,
             search_debounce_enabled: false,
             search_debounce_delay: 1000,
+            notifications: NotificationConfig::default(),
         };
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: AppConfig = serde_json::from_str(&json).unwrap();
@@ -81,5 +116,36 @@ mod tests {
         assert!(!config.confirm_before_actions);
         assert!(config.search_debounce_enabled);
         assert_eq!(config.search_debounce_delay, 2000);
+        // notifications should use defaults
+        assert!(config.notifications.enabled);
+        assert!(config.notifications.show_on_install);
+    }
+
+    #[test]
+    fn notification_config_default() {
+        let config = NotificationConfig::default();
+        assert!(config.enabled);
+        assert!(config.show_on_install);
+        assert!(config.show_on_uninstall);
+        assert!(config.show_on_update);
+        assert!(config.show_on_error);
+    }
+
+    #[test]
+    fn notification_config_serialization() {
+        let config = NotificationConfig {
+            enabled: false,
+            show_on_install: true,
+            show_on_uninstall: false,
+            show_on_update: true,
+            show_on_error: false,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: NotificationConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.enabled, false);
+        assert_eq!(deserialized.show_on_install, true);
+        assert_eq!(deserialized.show_on_uninstall, false);
+        assert_eq!(deserialized.show_on_update, true);
+        assert_eq!(deserialized.show_on_error, false);
     }
 }

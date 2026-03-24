@@ -1,6 +1,7 @@
 use crate::domain::entities::OperationType;
 use crate::domain::entities::{AppError, LoadState, MessageSeverity, UserMessage};
 use crate::presentation::components::Tab;
+use crate::presentation::services::desktop_notifications;
 
 use super::BrewstyApp;
 use super::format_size;
@@ -148,6 +149,15 @@ impl BrewstyApp {
             if let Ok(message) = result {
                 self.set_operation_success(message.clone());
                 self.toast_manager.success(message.clone());
+                
+                // Send desktop notification
+                if self.config.notifications.enabled && self.config.notifications.show_on_install {
+                    desktop_notifications::notify_success(
+                        "Package Installed",
+                        &format!("{} has been successfully installed", installed_pkg_name.as_ref().unwrap_or(&String::new())),
+                    );
+                }
+                
                 if let Some(pkg_name) = installed_pkg_name {
                     if let Some(mut pkg) = self.search_results.get_package(&pkg_name) {
                         pkg.installed = true;
@@ -168,6 +178,15 @@ impl BrewstyApp {
                     .unwrap_or_else(|| AppError::Unknown("Install failed".to_string()));
                 self.set_operation_failure(error.clone());
                 self.installed_message = Some(error.to_user_message("Install failed"));
+                
+                // Send error notification
+                if self.config.notifications.enabled && self.config.notifications.show_on_error {
+                    desktop_notifications::notify_error(
+                        "Install Failed",
+                        &format!("Failed to install {}: {}", installed_pkg_name.as_ref().unwrap_or(&String::new()), error.short_message()),
+                    );
+                }
+                
                 self.current_install_package = None;
             }
         }
@@ -199,6 +218,15 @@ impl BrewstyApp {
             if let Ok(message) = result {
                 self.set_operation_success(message.clone());
                 self.toast_manager.success(message.clone());
+                
+                // Send desktop notification
+                if self.config.notifications.enabled && self.config.notifications.show_on_install {
+                    desktop_notifications::notify_success(
+                        "Package Uninstalled",
+                        &format!("{} has been successfully uninstalled", uninstall_pkg_name.as_ref().unwrap_or(&String::new())),
+                    );
+                }
+                
                 if let Some(pkg) = self.current_uninstall_package.as_ref() {
                     self.merged_packages.remove_installed_package(pkg);
                 }
@@ -212,6 +240,15 @@ impl BrewstyApp {
                     .unwrap_or_else(|| AppError::Unknown("Uninstall failed".to_string()));
                 self.set_operation_failure(error.clone());
                 self.installed_message = Some(error.to_user_message("Uninstall failed"));
+                
+                // Send error notification
+                if self.config.notifications.enabled && self.config.notifications.show_on_error {
+                    desktop_notifications::notify_error(
+                        "Uninstall Failed",
+                        &format!("Failed to uninstall {}: {}", uninstall_pkg_name.as_ref().unwrap_or(&String::new()), error.short_message()),
+                    );
+                }
+                
                 self.current_uninstall_package = None;
             }
         }
@@ -243,10 +280,26 @@ impl BrewstyApp {
                 Ok(message) => {
                     self.set_operation_success(message.clone());
                     self.toast_manager.success(message.clone());
+                    
+                    // Send desktop notification
+                    if self.config.notifications.enabled && self.config.notifications.show_on_update {
+                        desktop_notifications::notify_success(
+                            "Package Updated",
+                            &format!("{} has been successfully updated", pkg.as_ref().unwrap_or(&String::new())),
+                        );
+                    }
                 }
                 Err(error) => {
                     self.set_operation_failure(error.clone());
                     self.installed_message = Some(error.to_user_message("Update failed"));
+                    
+                    // Send error notification
+                    if self.config.notifications.enabled && self.config.notifications.show_on_error {
+                        desktop_notifications::notify_error(
+                            "Update Failed",
+                            &format!("Failed to update {}: {}", pkg.as_ref().unwrap_or(&String::new()), error.short_message()),
+                        );
+                    }
                 }
             }
 
