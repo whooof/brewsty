@@ -1,3 +1,4 @@
+use crate::application::use_cases::{export_brewfile_ruby, generate_brewfile};
 use crate::domain::entities::OperationType;
 use crate::domain::entities::{AppError, LoadState, Package, PackageType};
 use crate::presentation::components::CleanupType;
@@ -1133,39 +1134,12 @@ impl BrewstyApp {
     }
 
     pub(super) fn handle_bundle_dump(&mut self) {
-        let file_dialog = rfd::FileDialog::new()
-            .add_filter("Brewfile", &[""])
-            .set_file_name("Brewfile");
+        // Generate Brewfile preview from installed packages
+        let brewfile = generate_brewfile(self.merged_packages.get_all_packages());
+        let preview = export_brewfile_ruby(&brewfile);
 
-        if let Some(path) = file_dialog.save_file() {
-            let path_str = path.display().to_string();
-            self.loading_bundle_dump = true;
-            self.set_operation_running("Exporting Brewfile", None);
-            self.status_message = "Exporting Brewfile...".to_string();
-            self.log_manager
-                .push(format!("Exporting Brewfile to: {}", path_str));
-            tracing::info!("Exporting Brewfile to: {}", path_str);
-
-            let shared = TaskSharedState::new();
-
-            self.task_manager.set_active_task(AsyncTask::BundleDump {
-                result: Arc::clone(&shared.result),
-                logs: Arc::clone(&shared.logs),
-            });
-
-            let use_case = Arc::clone(&self.use_cases.bundle_dump);
-            let path_display = path_str.clone();
-
-            self.executor.spawn(async move {
-                match use_case.execute(&path_display).await {
-                    Ok(_) => shared.set_success(format!(
-                        "Successfully exported Brewfile to {}",
-                        path_display
-                    )),
-                    Err(e) => shared.set_failure(AppError::from_anyhow(e)),
-                }
-            });
-        }
+        // Show modal with preview
+        self.brewfile_modal.open_export(preview);
     }
 
     pub(super) fn handle_bundle_check_preview(&mut self) {

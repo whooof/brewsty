@@ -8,10 +8,10 @@ use crate::domain::entities::{
 };
 use crate::infrastructure::config_repository::ConfigRepository;
 use crate::presentation::components::{
-    BrewfileSyncAction, BrewfileSyncModal, CleanupAction, CleanupModal, CleanupType, FilterState,
-    InfoModal, InfoModalAction, LogManager, MergedPackageList, PackageDetailsAction,
-    PackageDetailsModal, PackageList, ServiceList, ServiceModalAction, Tab, TabManager,
-    ToastManager,
+    BrewfileModal, BrewfileModalAction, BrewfileSyncAction, BrewfileSyncModal, CleanupAction,
+    CleanupModal, CleanupType, FilterState, InfoModal, InfoModalAction, LogManager,
+    MergedPackageList, PackageDetailsAction, PackageDetailsModal, PackageList, ServiceList,
+    ServiceModalAction, Tab, TabManager, ToastManager,
 };
 use crate::presentation::services::{AsyncExecutor, AsyncTaskManager};
 use crate::presentation::ui::tabs::history::{HistoryAction, HistoryTab};
@@ -33,6 +33,7 @@ pub struct BrewstyApp {
     pub(super) cleanup_modal: CleanupModal,
     pub(super) info_modal: InfoModal,
     pub(super) package_details_modal: PackageDetailsModal,
+    pub(super) brewfile_modal: BrewfileModal,
     pub(super) log_manager: LogManager,
     pub(super) toast_manager: ToastManager,
     pub(super) log_rx: Receiver<String>,
@@ -144,6 +145,7 @@ impl BrewstyApp {
             cleanup_modal: CleanupModal::new(),
             info_modal: InfoModal::new(),
             package_details_modal: PackageDetailsModal::new(),
+            brewfile_modal: BrewfileModal::new(),
             log_manager: LogManager::new(),
             toast_manager: ToastManager::new(),
             log_rx,
@@ -1123,6 +1125,23 @@ impl eframe::App for BrewstyApp {
                     }
                 }
                 PackageDetailsAction::Close | PackageDetailsAction::None => {}
+            }
+
+            // Brewfile Modal
+            match self.brewfile_modal.show(ctx) {
+                BrewfileModalAction::SaveToFile => {
+                    // Will be handled by polling async task results
+                }
+                BrewfileModalAction::CopyToClipboard => {
+                    // Will be handled by polling async task results
+                }
+                BrewfileModalAction::SelectFile => {
+                    // Will be handled by polling async task results
+                }
+                BrewfileModalAction::Import => {
+                    // Will be handled by polling async task results
+                }
+                BrewfileModalAction::None => {}
             }
         });
 

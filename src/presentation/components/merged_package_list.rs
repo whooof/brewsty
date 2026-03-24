@@ -62,6 +62,10 @@ impl MergedPackageList {
             .cloned()
     }
 
+    pub fn get_all_packages(&self) -> &[Package] {
+        &self.packages
+    }
+
     pub fn mark_package_updated(&mut self, package_name: &str) {
         if let Some(pos) = self
             .outdated_packages
