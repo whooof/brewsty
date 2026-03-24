@@ -84,15 +84,17 @@ impl PackageDetailsModal {
             ui.horizontal(|ui| {
                 if let Some(homepage) = &details.homepage
                     && ui.link("🌐 Homepage").clicked()
-                        && let Err(e) = open::that(homepage) {
-                            log::warn!("Failed to open homepage: {}", e);
-                        }
+                    && let Err(e) = open::that(homepage)
+                {
+                    log::warn!("Failed to open homepage: {}", e);
+                }
 
                 if let Some(repo) = &details.repo_url
                     && ui.link("📁 Repository").clicked()
-                        && let Err(e) = open::that(repo) {
-                            log::warn!("Failed to open repo: {}", e);
-                        }
+                    && let Err(e) = open::that(repo)
+                {
+                    log::warn!("Failed to open repo: {}", e);
+                }
             });
             ui.add_space(8.0);
 
@@ -137,12 +139,13 @@ impl PackageDetailsModal {
 
             // Caveats
             if let Some(caveats) = &details.caveats
-                && !caveats.trim().is_empty() {
-                    ui.label(RichText::new("⚠️ Caveats").strong());
-                    ui.group(|ui| {
-                        ui.label(caveats);
-                    });
-                }
+                && !caveats.trim().is_empty()
+            {
+                ui.label(RichText::new("⚠️ Caveats").strong());
+                ui.group(|ui| {
+                    ui.label(caveats);
+                });
+            }
 
             ui.add_space(16.0);
 

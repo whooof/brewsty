@@ -63,14 +63,14 @@ impl WasmPlugin {
         let engine = Engine::default();
         let module = Module::from_file(&engine, path)
             .map_err(|e| anyhow::anyhow!("Failed to load WASM module from {:?}: {}", path, e))?;
-        
+
         let mut store = Store::new(&engine, ());
         let instance = Instance::new(&mut store, &module, &[])
             .map_err(|e| anyhow::anyhow!("Failed to instantiate WASM module: {}", e))?;
-        
+
         // Try to get plugin info from exports
         let info = Self::extract_plugin_info(&mut store, &instance)?;
-        
+
         Ok(Self {
             info,
             _engine: engine,
@@ -78,7 +78,7 @@ impl WasmPlugin {
             _instance: instance,
         })
     }
-    
+
     /// Extract plugin info from WASM exports
     fn extract_plugin_info(_store: &mut Store<()>, _instance: &Instance) -> Result<PluginInfo> {
         // Try to get info function from WASM module
@@ -97,12 +97,12 @@ impl Plugin for WasmPlugin {
     fn info(&self) -> &PluginInfo {
         &self.info
     }
-    
+
     fn initialize(&mut self) -> Result<()> {
         // Call WASM export for initialization
         Ok(())
     }
-    
+
     fn shutdown(&mut self) -> Result<()> {
         // Call WASM export for shutdown
         Ok(())
@@ -344,7 +344,9 @@ mod tests {
     #[test]
     fn test_load_plugins_from_nonexistent_dir() {
         let mut manager = PluginManager::new();
-        let loaded = manager.load_plugins_from_dir(Path::new("/nonexistent/dir")).unwrap();
+        let loaded = manager
+            .load_plugins_from_dir(Path::new("/nonexistent/dir"))
+            .unwrap();
         assert_eq!(loaded, 0);
     }
 

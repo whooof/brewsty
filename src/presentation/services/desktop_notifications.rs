@@ -30,7 +30,7 @@ pub fn send_notification(
 ) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
-        use mac_notification_sys::{set_application, Notification};
+        use mac_notification_sys::{Notification, set_application};
 
         // Set the application name for notifications
         set_application("Brewsty").ok();

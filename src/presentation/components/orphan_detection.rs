@@ -192,9 +192,9 @@ pub fn render_orphan_detection(
                 selected_orphans.len()
             ))
             .clicked()
-        {
-            on_remove_selected(selected_orphans);
-        }
+    {
+        on_remove_selected(selected_orphans);
+    }
 }
 
 fn format_size(bytes: u64) -> String {

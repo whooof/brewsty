@@ -27,7 +27,11 @@ pub struct UndoRequest {
 pub struct HistoryTab;
 
 impl HistoryTab {
-    pub fn show(ui: &mut egui::Ui, history: &OperationHistory) -> Vec<HistoryAction> {
+    pub fn show(
+        ui: &mut egui::Ui,
+        history: &OperationHistory,
+        search_query: &mut String,
+    ) -> Vec<HistoryAction> {
         let mut actions = Vec::new();
 
         ui.horizontal(|ui| {
@@ -41,6 +45,25 @@ impl HistoryTab {
         });
         ui.add_space(4.0);
 
+        // Search bar
+        ui.horizontal(|ui| {
+            ui.label("\u{1F50D}");
+            let response = ui.text_edit_singleline(search_query);
+            if response.changed() || response.lost_focus() {
+                ui.ctx().request_repaint();
+            }
+            if !search_query.is_empty() && ui.small_button("Clear").clicked() {
+                *search_query = String::new();
+            }
+            let filtered_count = if search_query.is_empty() {
+                history.records.len()
+            } else {
+                history.search_by_target(search_query).len()
+            };
+            ui.label(format!("({} showing)", filtered_count));
+        });
+        ui.add_space(4.0);
+
         if history.records.is_empty() {
             ui.vertical_centered(|ui| {
                 ui.add_space(40.0);
@@ -51,6 +74,28 @@ impl HistoryTab {
                 );
                 ui.add_space(8.0);
                 ui.label("Install, uninstall, update, or manage packages to see history here.");
+            });
+            return actions;
+        }
+
+        let filtered_records: Vec<&OperationRecord> = if search_query.is_empty() {
+            history.records.iter().collect()
+        } else {
+            history.search_by_target(search_query)
+        };
+
+        if filtered_records.is_empty() && !history.records.is_empty() {
+            ui.vertical_centered(|ui| {
+                ui.add_space(20.0);
+                ui.label(
+                    egui::RichText::new("No matching records found")
+                        .size(14.0)
+                        .color(egui::Color32::GRAY),
+                );
+                ui.label(format!(
+                    "Try a different search term than \"{}\"",
+                    search_query
+                ));
             });
             return actions;
         }
@@ -108,9 +153,9 @@ impl HistoryTab {
                 });
             })
             .body(|body| {
-                body.rows(row_height, history.records.len(), |mut row| {
+                body.rows(row_height, filtered_records.len(), |mut row| {
                     let idx = row.index();
-                    let record = &history.records[idx];
+                    let record = filtered_records[idx];
 
                     row.col(|ui| {
                         padded_cell(ui, |ui| {
@@ -162,14 +207,16 @@ impl HistoryTab {
                                     .button("\u{21A9}")
                                     .on_hover_text("Undo this operation")
                                     .clicked()
-                                && let Some(reverse) = record.operation.reverse()
-                                && let Some(target) = &record.target
                             {
-                                actions.push(HistoryAction::Undo(UndoRequest {
-                                    reverse_operation: reverse,
-                                    target: target.clone(),
-                                    package_type: record.package_type,
-                                }));
+                                if let Some(reverse) = record.operation.reverse() {
+                                    if let Some(target) = &record.target {
+                                        actions.push(HistoryAction::Undo(UndoRequest {
+                                            reverse_operation: reverse,
+                                            target: target.clone(),
+                                            package_type: record.package_type,
+                                        }));
+                                    }
+                                }
                             }
                         })
                     });

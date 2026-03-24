@@ -38,10 +38,10 @@
 //! ```
 
 pub mod application;
-pub mod domain;
-pub mod infrastructure;
 pub mod cli;
-pub mod plugins;
+pub mod domain;
 pub mod error;
+pub mod infrastructure;
+pub mod plugins;
 
 pub use error::{BrewstyError, Result};

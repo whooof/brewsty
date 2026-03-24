@@ -1,6 +1,5 @@
 //! Package category detection and classification
 
-
 /// Package categories for filtering and organization
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PackageCategory {

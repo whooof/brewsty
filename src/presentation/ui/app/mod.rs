@@ -99,6 +99,7 @@ pub struct BrewstyApp {
     #[allow(clippy::type_complexity)]
     pub(super) pending_deps_load: Option<Arc<Mutex<Option<(String, String)>>>>,
     pub(super) operation_history: OperationHistory,
+    pub(super) history_search_query: String,
 }
 
 #[derive(Clone, Debug)]
@@ -198,6 +199,7 @@ impl BrewstyApp {
             current_brewfile_path: None,
             pending_deps_load: None,
             operation_history,
+            history_search_query: String::new(),
         }
     }
 
@@ -537,15 +539,17 @@ impl eframe::App for BrewstyApp {
                     .success("Configuration saved".to_string());
             }
             // Cmd+Z: Undo last operation
-            if ctx.input(|i| i.key_pressed(egui::Key::Z))
-                && let Some(last_op) = self.operation_history.records.first()
-                    && (last_op.operation == OperationType::Install
+            if ctx.input(|i| i.key_pressed(egui::Key::Z)) {
+                if let Some(last_op) = self.operation_history.records.first() {
+                    if last_op.operation == OperationType::Install
                         || last_op.operation == OperationType::Uninstall
-                        || last_op.operation == OperationType::Update)
+                        || last_op.operation == OperationType::Update
                     {
                         self.toast_manager
                             .info(format!("Undo not available for {:?}", last_op.operation));
                     }
+                }
+            }
             // Cmd+1-6: Switch tabs
             if ctx.input(|i| i.key_pressed(egui::Key::Num1)) {
                 self.tab_manager.switch_to(Tab::Installed);
@@ -567,17 +571,19 @@ impl eframe::App for BrewstyApp {
             }
             // Cmd+A: Select all (in Outdated tab)
             if ctx.input(|i| i.key_pressed(egui::Key::A))
-                && self.tab_manager.is_current(Tab::Installed) {
-                    // Select all outdated packages
-                }
+                && self.tab_manager.is_current(Tab::Installed)
+            {
+                // Select all outdated packages
+            }
         }
 
         // Delete/Backspace: Uninstall selected package
         if (ctx.input(|i| i.key_pressed(egui::Key::Delete))
             || ctx.input(|i| i.key_pressed(egui::Key::Backspace)))
-            && self.tab_manager.is_current(Tab::Installed) {
-                // Handle uninstall of selected package
-            }
+            && self.tab_manager.is_current(Tab::Installed)
+        {
+            // Handle uninstall of selected package
+        }
 
         // Escape: Close modals
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -866,7 +872,7 @@ impl eframe::App for BrewstyApp {
                 }
 
                 Tab::History => {
-                    let actions = HistoryTab::show(ui, &self.operation_history);
+                    let actions = HistoryTab::show(ui, &self.operation_history, &mut self.history_search_query);
 
                     for action in actions {
                         match action {

@@ -1,3 +1,4 @@
+use crate::domain::entities::{AppError, MessageSeverity};
 use egui::{Align2, Area, Color32, CornerRadius, Frame, Id, Margin, Order, RichText};
 use std::time::{Duration, Instant};
 
@@ -6,6 +7,17 @@ pub enum ToastType {
     Info,
     Success,
     Error,
+}
+
+impl From<MessageSeverity> for ToastType {
+    fn from(severity: MessageSeverity) -> Self {
+        match severity {
+            MessageSeverity::Info => ToastType::Info,
+            MessageSeverity::Success => ToastType::Success,
+            MessageSeverity::Warning => ToastType::Info,
+            MessageSeverity::Error => ToastType::Error,
+        }
+    }
 }
 
 pub struct Toast {
@@ -47,9 +59,33 @@ impl ToastManager {
         self.add(message, None::<String>, ToastType::Error);
     }
 
-    #[allow(dead_code)]
+    /// Show error toast with detailed information
     pub fn error_with_details(&mut self, message: impl Into<String>, details: impl Into<String>) {
         self.add(message, Some(details.into()), ToastType::Error);
+    }
+
+    /// Show error toast from AppError with automatic details extraction
+    pub fn error_from_app_error(&mut self, error: &AppError) {
+        let message = error.short_message();
+        let details = error.details().unwrap_or_else(|| error.to_string());
+        self.add(message, Some(details), ToastType::Error);
+    }
+
+    /// Show toast with MessageSeverity
+    pub fn show_with_severity(&mut self, message: impl Into<String>, severity: MessageSeverity) {
+        let toast_type = ToastType::from(severity);
+        self.add(message, None::<String>, toast_type);
+    }
+
+    /// Show toast with MessageSeverity and details
+    pub fn show_with_severity_and_details(
+        &mut self,
+        message: impl Into<String>,
+        details: impl Into<String>,
+        severity: MessageSeverity,
+    ) {
+        let toast_type = ToastType::from(severity);
+        self.add(message, Some(details.into()), toast_type);
     }
 
     pub fn info(&mut self, message: impl Into<String>) {

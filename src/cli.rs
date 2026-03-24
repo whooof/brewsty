@@ -112,7 +112,6 @@ pub enum Commands {
 /// Output formatter for CLI
 pub struct OutputFormatter {
     format: String,
-    #[allow(dead_code)] // Reserved for future verbose output mode
     verbose: bool,
 }
 
@@ -122,6 +121,11 @@ impl OutputFormatter {
             format: format.to_string(),
             verbose,
         }
+    }
+
+    /// Check if verbose mode is enabled
+    pub fn is_verbose(&self) -> bool {
+        self.verbose
     }
 
     pub fn format_message(&self, message: &str) -> String {
@@ -135,6 +139,79 @@ impl OutputFormatter {
         match self.format.as_str() {
             "json" => format!("{{\"error\": \"{}\"}}\n", error.replace('"', "\\\"")),
             _ => format!("❌ Error: {}\n", error),
+        }
+    }
+
+    /// Format verbose output with additional details
+    pub fn format_verbose(&self, header: &str, details: &str) -> String {
+        if !self.verbose {
+            return String::new();
+        }
+        match self.format.as_str() {
+            "json" => format!(
+                "{{\"verbose\": {{\"header\": \"{}\", \"details\": \"{}\"}}}}\n",
+                header.replace('"', "\\\""),
+                details.replace('"', "\\\"")
+            ),
+            _ => format!("\n📝 {}:\n   {}\n", header, details.replace('\n', "\n   ")),
+        }
+    }
+
+    /// Format package details in verbose mode
+    pub fn format_package_details(&self, pkg: &crate::domain::entities::Package) -> String {
+        if !self.verbose {
+            return String::new();
+        }
+        match self.format.as_str() {
+            "json" => {
+                format!(
+                    "{{\"package\": {{\"name\": \"{}\", \"version\": \"{}\", \"type\": \"{:?}\", \"outdated\": {}, \"pinned\": {}}}}}\n",
+                    pkg.name.replace('"', "\\\""),
+                    pkg.version
+                        .as_deref()
+                        .unwrap_or("unknown")
+                        .replace('"', "\\\""),
+                    pkg.package_type,
+                    pkg.outdated,
+                    pkg.pinned
+                )
+            }
+            _ => {
+                let mut output = String::new();
+                output.push_str(&format!("   Name: {}\n", pkg.name));
+                output.push_str(&format!(
+                    "   Version: {}\n",
+                    pkg.version.as_deref().unwrap_or("unknown")
+                ));
+                output.push_str(&format!("   Type: {:?}\n", pkg.package_type));
+                output.push_str(&format!(
+                    "   Outdated: {}\n",
+                    if pkg.outdated { "Yes" } else { "No" }
+                ));
+                output.push_str(&format!(
+                    "   Pinned: {}\n",
+                    if pkg.pinned { "Yes" } else { "No" }
+                ));
+                if let Some(desc) = &pkg.description {
+                    output.push_str(&format!("   Description: {}\n", desc));
+                }
+                output
+            }
+        }
+    }
+
+    /// Format timing information in verbose mode
+    pub fn format_timing(&self, operation: &str, duration_ms: u128) -> String {
+        if !self.verbose {
+            return String::new();
+        }
+        match self.format.as_str() {
+            "json" => format!(
+                "{{\"timing\": {{\"operation\": \"{}\", \"duration_ms\": {}}}}}\n",
+                operation.replace('"', "\\\""),
+                duration_ms
+            ),
+            _ => format!("⏱️  {} took {}ms\n", operation, duration_ms),
         }
     }
 }
@@ -182,5 +259,38 @@ mod tests {
         let formatter = OutputFormatter::new("json", false);
         let output = formatter.format_message("Test message");
         assert!(output.contains("\"message\": \"Test message\""));
+    }
+
+    #[test]
+    fn test_verbose_mode_disabled() {
+        let formatter = OutputFormatter::new("text", false);
+        assert!(!formatter.is_verbose());
+        assert!(formatter.format_verbose("Header", "Details").is_empty());
+        assert!(formatter.format_timing("test", 100).is_empty());
+    }
+
+    #[test]
+    fn test_verbose_mode_enabled() {
+        let formatter = OutputFormatter::new("text", true);
+        assert!(formatter.is_verbose());
+        let verbose = formatter.format_verbose("Header", "Details");
+        assert!(verbose.contains("Header"));
+        assert!(verbose.contains("Details"));
+    }
+
+    #[test]
+    fn test_verbose_timing() {
+        let formatter = OutputFormatter::new("text", true);
+        let timing = formatter.format_timing("test_op", 250);
+        assert!(timing.contains("test_op"));
+        assert!(timing.contains("250ms"));
+    }
+
+    #[test]
+    fn test_verbose_json_output() {
+        let formatter = OutputFormatter::new("json", true);
+        let timing = formatter.format_timing("test_op", 100);
+        assert!(timing.contains("\"timing\""));
+        assert!(timing.contains("\"test_op\""));
     }
 }
