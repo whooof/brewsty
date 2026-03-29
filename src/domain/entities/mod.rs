@@ -12,7 +12,7 @@ pub use app::{AppError, CommandResult, LoadState, MessageSeverity, OperationStat
 pub use brewfile::BrewfileSyncPreview;
 pub use config::{AppConfig, ThemeMode};
 pub use doctor::{DoctorOutput, DoctorWarning};
-pub use history::{OperationHistory, OperationRecord, OperationType};
+pub use history::{OperationHistory, OperationType};
 pub use package::{CleanupItem, CleanupPreview, Package, PackageType};
 #[allow(unused_imports)] // Used in tests and other modules
 pub use package_category::PackageCategory;

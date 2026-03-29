@@ -88,41 +88,37 @@ impl ServiceList {
     }
 
     pub fn set_service_info(&mut self, name: &str, info: ServiceInfo) {
-        if let Some(modal) = &mut self.service_detail_modal {
-            if modal.service_name == name {
+        if let Some(modal) = &mut self.service_detail_modal
+            && modal.service_name == name {
                 modal.info = Some(info);
                 modal.loading_info = false;
                 modal.info_error = None;
             }
-        }
     }
 
     pub fn set_service_info_error(&mut self, name: &str, error: String) {
-        if let Some(modal) = &mut self.service_detail_modal {
-            if modal.service_name == name {
+        if let Some(modal) = &mut self.service_detail_modal
+            && modal.service_name == name {
                 modal.loading_info = false;
                 modal.info_error = Some(error);
             }
-        }
     }
 
     pub fn set_service_log(&mut self, name: &str, log_content: String) {
-        if let Some(modal) = &mut self.service_detail_modal {
-            if modal.service_name == name {
+        if let Some(modal) = &mut self.service_detail_modal
+            && modal.service_name == name {
                 modal.log_content = Some(log_content);
                 modal.loading_log = false;
                 modal.log_error = None;
             }
-        }
     }
 
     pub fn set_service_log_error(&mut self, name: &str, error: String) {
-        if let Some(modal) = &mut self.service_detail_modal {
-            if modal.service_name == name {
+        if let Some(modal) = &mut self.service_detail_modal
+            && modal.service_name == name {
                 modal.loading_log = false;
                 modal.log_error = Some(error);
             }
-        }
     }
 
     /// Render the detail modal if open. Returns true if it was closed.

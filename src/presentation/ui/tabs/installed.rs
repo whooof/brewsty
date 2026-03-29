@@ -1,4 +1,4 @@
-use crate::domain::entities::{Package, PackageType};
+use crate::domain::entities::Package;
 use crate::presentation::components::{
     FilterState, MergedPackageList, PackageDetailsModal, SortField, SortOrder,
 };
