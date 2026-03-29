@@ -31,7 +31,59 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use wasmtime::{Engine, Instance, Module, Store};
+use wasmtime::{Config, Engine, Instance, Module, Store};
+
+/// Maximum WASM stack size (1 MB)
+const WASM_MAX_STACK: usize = 1024 * 1024;
+
+/// Allowed plugin directories (only these paths can load WASM plugins)
+const ALLOWED_PLUGIN_DIRS: &[&str] = &["~/.brewsty/plugins", "/usr/local/lib/brewsty/plugins"];
+
+/// Check if a path is within an allowed plugin directory
+fn is_allowed_plugin_path(path: &Path) -> bool {
+    let path_str = path.to_string_lossy();
+    
+    for allowed_dir in ALLOWED_PLUGIN_DIRS {
+        let expanded = if allowed_dir.starts_with("~/") {
+            dirs::home_dir()
+                .map(|h| h.join(&allowed_dir[2..]))
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default()
+        } else {
+            allowed_dir.to_string()
+        };
+        
+        if path_str.starts_with(&expanded) {
+            return true;
+        }
+    }
+    
+    false
+}
+
+/// Create a sandboxed wasmtime engine with resource limits
+fn create_sandboxed_engine() -> Result<Engine> {
+    let mut config = Config::new();
+
+    // Limit stack size to prevent stack overflow attacks
+    config.max_wasm_stack(WASM_MAX_STACK);
+
+    // Enable fuel consumption for CPU limiting (prevents infinite loops)
+    // Fuel is added at runtime in WasmPlugin::load()
+    config.consume_fuel(true);
+
+    // Enable epoch interruption for cooperative termination
+    config.epoch_interruption(true);
+
+    // Disable memory64 to limit memory address space (32-bit only)
+    config.wasm_memory64(false);
+
+    // Disable multi-memory to limit to single memory region
+    config.wasm_multi_memory(false);
+
+    Engine::new(&config)
+        .map_err(|e| anyhow::anyhow!("Failed to create sandboxed WASM engine: {}", e))
+}
 
 /// Plugin metadata
 #[derive(Debug, Clone)]
@@ -58,13 +110,33 @@ pub struct WasmPlugin {
 }
 
 impl WasmPlugin {
-    /// Load a WASM plugin from a file
+    /// Load a WASM plugin from a file with sandboxing
+    ///
+    /// # Security
+    /// - Plugin must be in an allowed directory
+    /// - Engine has memory and stack limits
+    /// - Fuel consumption is enabled for CPU limiting
     pub fn load(path: &Path) -> Result<Self> {
-        let engine = Engine::default();
+        // Security: Validate path is in allowed plugin directory
+        if !is_allowed_plugin_path(path) {
+            return Err(anyhow::anyhow!(
+                "Security: Plugin path {:?} is not in an allowed directory. \
+                 Allowed directories: {}",
+                path,
+                ALLOWED_PLUGIN_DIRS.join(", ")
+            ));
+        }
+
+        // Use sandboxed engine with resource limits
+        let engine = create_sandboxed_engine()?;
         let module = Module::from_file(&engine, path)
             .map_err(|e| anyhow::anyhow!("Failed to load WASM module from {:?}: {}", path, e))?;
 
         let mut store = Store::new(&engine, ());
+        
+        // Set initial fuel limit (100M units ≈ 100M instructions)
+        store.set_fuel(100_000_000)?;
+        
         let instance = Instance::new(&mut store, &module, &[])
             .map_err(|e| anyhow::anyhow!("Failed to instantiate WASM module: {}", e))?;
 
@@ -117,10 +189,14 @@ pub struct PluginManager {
 }
 
 impl PluginManager {
+    /// Create a new plugin manager with sandboxed WASM engine
     pub fn new() -> Self {
         Self {
             plugins: HashMap::new(),
-            engine: Arc::new(Engine::default()),
+            engine: Arc::new(
+                create_sandboxed_engine()
+                    .expect("Failed to create sandboxed WASM engine")
+            ),
         }
     }
 
@@ -132,7 +208,20 @@ impl PluginManager {
     }
 
     /// Load a WASM plugin from a file
+    ///
+    /// # Security
+    /// Only loads plugins from allowed directories. See `ALLOWED_PLUGIN_DIRS`.
     pub fn load_plugin(&mut self, name: &str, path: &Path) -> Result<()> {
+        // Security: Reject paths outside allowed directories
+        if path.exists() && !is_allowed_plugin_path(path) {
+            return Err(anyhow::anyhow!(
+                "Security: Cannot load plugin from {:?}. \
+                 Only allowed directories: {}",
+                path,
+                ALLOWED_PLUGIN_DIRS.join(", ")
+            ));
+        }
+        
         if !path.exists() {
             // Fall back to placeholder if file doesn't exist
             let info = PluginInfo {

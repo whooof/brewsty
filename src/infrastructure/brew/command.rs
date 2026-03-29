@@ -281,35 +281,73 @@ impl BrewCommand {
         }
     }
 
-    pub fn get_installed_sizes() -> Result<std::collections::HashMap<String, u64>> {
-        tracing::debug!("Running: brew --prefix to get Cellar and Caskroom paths");
-        let prefix = Self::run_brew(&["--prefix"])?.trim().to_string();
+    /// Validate that a Homebrew prefix path is safe (no shell injection characters)
+fn validate_brew_prefix(prefix: &str) -> Result<()> {
+    // Check path doesn't contain dangerous characters
+    if prefix.contains(&['$', '`', ';', '|', '&', '>', '<', '\n', '\0'][..]) {
+        return Err(anyhow::anyhow!(
+            "Security: brew prefix contains unsafe characters: {}",
+            prefix
+        ));
+    }
+    
+    // Check path looks like a valid homebrew path
+    if !prefix.contains("/Cellar") && !prefix.contains("/Caskroom") && !prefix.contains("homebrew") {
+        tracing::warn!("Unexpected brew prefix format: {}", prefix);
+    }
+    
+    Ok(())
+}
 
-        let cellar = format!("{}/Cellar/*", prefix);
-        let caskroom = format!("{}/Caskroom/*", prefix);
+pub fn get_installed_sizes() -> Result<std::collections::HashMap<String, u64>> {
+    tracing::debug!("Running: brew --prefix to get Cellar and Caskroom paths");
+    let prefix = Self::run_brew(&["--prefix"])?.trim().to_string();
+    
+    // Security: Validate prefix path before using
+        Self::validate_brew_prefix(&prefix)?;
 
-        let output = Command::new("sh")
-            .arg("-c")
-            .arg(format!("du -sk {} {} 2>/dev/null", cellar, caskroom))
-            .output()?;
-
-        let mut sizes = std::collections::HashMap::new();
-        let stdout = String::from_utf8_lossy(&output.stdout);
-
-        for line in stdout.lines() {
-            let parts: Vec<&str> = line.split('\t').collect();
-            if parts.len() == 2
-                && let Ok(size_kb) = parts[0].parse::<u64>()
-            {
-                let path = parts[1];
-                if let Some(name) = path.split('/').next_back() {
-                    sizes.insert(name.to_string(), size_kb * 1024);
+    let cellar_dir = std::path::PathBuf::from(&prefix).join("Cellar");
+    let caskroom_dir = std::path::PathBuf::from(&prefix).join("Caskroom");
+    
+    let mut sizes = std::collections::HashMap::new();
+    
+    // Use direct du command (no shell) for each directory
+    for (dir, dir_type) in [&cellar_dir, &caskroom_dir].iter().zip(["Cellar", "Caskroom"]) {
+        if !dir.exists() {
+            tracing::debug!("{} directory doesn't exist: {:?}", dir_type, dir);
+            continue;
+        }
+        
+        // Get sizes for each package in the directory
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let package_path = entry.path();
+                if package_path.is_dir() {
+                    let package_name = entry.file_name().to_string_lossy().to_string();
+                    
+                    // Use du directly without shell
+                    let output = Command::new("du")
+                        .arg("-sk")
+                        .arg(&package_path)
+                        .output();
+                    
+                    if let Ok(output) = output {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        for line in stdout.lines() {
+                            let parts: Vec<&str> = line.split('\t').collect();
+                            if !parts.is_empty()
+                                && let Ok(size_kb) = parts[0].parse::<u64>() {
+                                    sizes.insert(package_name.clone(), size_kb * 1024);
+                                }
+                        }
+                    }
                 }
             }
         }
-
-        Ok(sizes)
     }
+
+    Ok(sizes)
+}
 
     pub fn list_packages(package_type: PackageType) -> Result<String> {
         let type_arg = match package_type {
