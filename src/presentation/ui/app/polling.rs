@@ -2,9 +2,9 @@ use crate::domain::entities::OperationType;
 use crate::domain::entities::{AppError, LoadState, MessageSeverity, UserMessage};
 use crate::presentation::components::Tab;
 use crate::presentation::services::desktop_notifications;
+use crate::presentation::utils::format_size;
 
 use super::BrewstyApp;
-use super::format_size;
 
 impl BrewstyApp {
     pub(super) fn poll_async_tasks(&mut self) {
@@ -326,12 +326,12 @@ impl BrewstyApp {
                 }
             }
 
-            if result.is_ok()
-                && let Some(pkg_name) = pkg
-            {
-                self.merged_packages.mark_package_updated(&pkg_name);
-                self.merged_packages
-                    .remove_from_outdated_selection_by_name(&pkg_name);
+            if result.is_ok() {
+                if let Some(pkg_name) = pkg {
+                    self.merged_packages.mark_package_updated(&pkg_name);
+                    self.merged_packages
+                        .remove_from_outdated_selection_by_name(&pkg_name);
+                }
             }
 
             if self.loading_update_all && !self.pending_updates.is_empty() {

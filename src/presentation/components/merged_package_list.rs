@@ -316,7 +316,7 @@ impl MergedPackageList {
                                         padded_cell(ui, |ui| {
                                             if let Some(size) = package.installed_size {
                                                 ui.label(
-                                                    crate::presentation::ui::app::format_size(size),
+                                                    crate::presentation::utils::format_size(size),
                                                 );
                                             } else {
                                                 ui.label("-");
@@ -528,7 +528,7 @@ impl MergedPackageList {
                                         padded_cell(ui, |ui| {
                                             if let Some(size) = package.installed_size {
                                                 ui.label(
-                                                    crate::presentation::ui::app::format_size(size),
+                                                    crate::presentation::utils::format_size(size),
                                                 );
                                             } else {
                                                 ui.label("-");

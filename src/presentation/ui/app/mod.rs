@@ -473,22 +473,6 @@ impl BrewstyApp {
     }
 }
 
-pub fn format_size(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-
-    if bytes >= GB {
-        format!("{:.2} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.2} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.2} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes)
-    }
-}
-
 impl eframe::App for BrewstyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_logs();
@@ -544,15 +528,17 @@ impl eframe::App for BrewstyApp {
                     .success("Configuration saved".to_string());
             }
             // Cmd+Z: Undo last operation
-            if ctx.input(|i| i.key_pressed(egui::Key::Z))
-                && let Some(last_op) = self.operation_history.records.first()
-                    && (last_op.operation == OperationType::Install
+            if ctx.input(|i| i.key_pressed(egui::Key::Z)) {
+                if let Some(last_op) = self.operation_history.records.first() {
+                    if last_op.operation == OperationType::Install
                         || last_op.operation == OperationType::Uninstall
-                        || last_op.operation == OperationType::Update)
+                        || last_op.operation == OperationType::Update
                     {
                         self.toast_manager
                             .info(format!("Undo not available for {:?}", last_op.operation));
                     }
+                }
+            }
             // Cmd+1-6: Switch tabs
             if ctx.input(|i| i.key_pressed(egui::Key::Num1)) {
                 self.tab_manager.switch_to(Tab::Installed);
