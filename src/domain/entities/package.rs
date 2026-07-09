@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use super::package_category::PackageCategory;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PackageType {
     Formula,
@@ -28,12 +30,13 @@ pub struct Package {
     pub version_load_failed: bool,
     pub pinned: bool,
     pub installed_size: Option<u64>,
+    pub category: PackageCategory,
 }
 
 impl Package {
     pub fn new(name: String, package_type: PackageType) -> Self {
         Self {
-            name,
+            name: name.clone(),
             version: None,
             available_version: None,
             description: None,
@@ -43,7 +46,14 @@ impl Package {
             version_load_failed: false,
             pinned: false,
             installed_size: None,
+            category: PackageCategory::Other, // Will be updated when description is set
         }
+    }
+
+    pub fn with_description(mut self, description: String) -> Self {
+        self.category = PackageCategory::from_package(&self.name, Some(&description));
+        self.description = Some(description);
+        self
     }
 
     pub fn with_version(mut self, version: String) -> Self {
@@ -53,11 +63,6 @@ impl Package {
 
     pub fn with_available_version(mut self, version: String) -> Self {
         self.available_version = Some(version);
-        self
-    }
-
-    pub fn with_description(mut self, description: String) -> Self {
-        self.description = Some(description);
         self
     }
 

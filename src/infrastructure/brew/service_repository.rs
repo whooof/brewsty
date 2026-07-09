@@ -1,5 +1,5 @@
 use crate::domain::{
-    entities::{Service, ServiceInfo, ServiceStatus},
+    entities::{AppError, Service, ServiceInfo, ServiceStatus},
     repositories::ServiceRepository,
 };
 use crate::infrastructure::brew::command::BrewCommand;
@@ -36,6 +36,12 @@ struct ServiceInfoEntry {
     log_path: Option<String>,
     error_log_path: Option<String>,
     command: Option<String>,
+}
+
+impl Default for BrewServiceRepository {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BrewServiceRepository {
@@ -144,15 +150,68 @@ impl BrewServiceRepository {
         Ok(services)
     }
 
+    fn service_command_error(
+        name: &str,
+        error: &anyhow::Error,
+        stderr: impl Into<String>,
+    ) -> anyhow::Error {
+        let stderr = stderr.into();
+        let (command, exit_code) = match error.downcast_ref::<AppError>() {
+            Some(AppError::CommandFailed {
+                command, exit_code, ..
+            }) => (command.clone(), *exit_code),
+            _ => (format!("brew services start {name}"), None),
+        };
+
+        AppError::CommandFailed {
+            command,
+            exit_code,
+            stderr,
+        }
+        .into()
+    }
+
     fn enrich_service_command_error(name: &str, error: anyhow::Error) -> anyhow::Error {
         let message = error.to_string();
+        let lowered = message.to_lowercase();
+
+        if lowered.contains("must be run as non-root to start at user login")
+            && lowered.contains("bootstrap system")
+            && lowered.contains("/library/launchdaemons/homebrew.mxcl.")
+        {
+            return Self::service_command_error(
+                name,
+                &error,
+                format!(
+                    "Homebrew tried to register '{name}' as a system LaunchDaemon, but this formula explicitly warns that it must run as a non-root user login service.\n\
+\n\
+What this means:\n\
+- `launchctl bootstrap system ...` tried to load `/Library/LaunchDaemons/homebrew.mxcl.{name}.plist`\n\
+- Homebrew also reported that `{name}` must not run as root at login\n\
+- the current service registration is therefore in the wrong scope, not just missing a password prompt\n\
+\n\
+Recommended recovery:\n\
+1. Stop any broken registration: `brew services stop {name}`\n\
+2. If the system daemon is stuck, unload it: `sudo launchctl bootout system /Library/LaunchDaemons/homebrew.mxcl.{name}.plist`\n\
+3. Decide the intended mode:\n\
+   - user login service: start it from your account without a system daemon\n\
+   - system-wide daemon: manage it explicitly outside the Homebrew user-login flow\n\
+4. If Homebrew already took `root:admin` ownership of `{name}` paths, clean those stale paths before reinstalling/upgrading as warned by Homebrew\n\
+\n\
+Original output:\n{message}"
+                ),
+            );
+        }
 
         if message.contains("launchctl bootstrap")
             && message.contains("exited with 5")
             && message.contains("Input/output error")
         {
-            return anyhow!(
-                "Failed to start service '{}': launchctl bootstrap returned exit code 5.\n\
+            return Self::service_command_error(
+                name,
+                &error,
+                format!(
+                    "Failed to start service '{}': launchctl bootstrap returned exit code 5.\n\
 This usually means the LaunchAgent is in a bad state, the plist is invalid, or macOS refused to load it.\n\
 Try:\n\
 1. brew services stop {}\n\
@@ -161,12 +220,8 @@ Try:\n\
 4. brew services start {}\n\
 If it still fails, inspect the live state with:\n\
 launchctl print gui/$(id -u)/homebrew.mxcl.{}",
-                name,
-                name,
-                name,
-                name,
-                name,
-                name
+                    name, name, name, name, name, name
+                ),
             );
         }
 
@@ -285,11 +340,35 @@ Error: Failure while executing; `/bin/launchctl bootstrap gui/501 /Users/test/Li
         );
 
         let enriched = BrewServiceRepository::enrich_service_command_error("caddy", error);
-        let message = enriched.to_string();
+        let details = enriched
+            .downcast_ref::<AppError>()
+            .and_then(AppError::details)
+            .unwrap_or_else(|| enriched.to_string());
 
-        assert!(message.contains("launchctl bootstrap returned exit code 5"));
-        assert!(message.contains("launchctl bootout gui/$(id -u)"));
-        assert!(message.contains("plutil -lint"));
+        assert!(details.contains("launchctl bootstrap returned exit code 5"));
+        assert!(details.contains("launchctl bootout gui/$(id -u)"));
+        assert!(details.contains("plutil -lint"));
+    }
+
+    #[test]
+    fn enriches_non_root_user_login_service_conflict() {
+        let error = anyhow!(
+            "Warning: Taking root:admin ownership of some caddy paths:\n\
+  /opt/homebrew/Cellar/caddy/2.11.2/bin\n\
+Warning: caddy must be run as non-root to start at user login!\n\
+Bootstrap failed: 5: Input/output error\n\
+Error: Failure while executing; `/bin/launchctl bootstrap system /Library/LaunchDaemons/homebrew.mxcl.caddy.plist` exited with 5."
+        );
+
+        let enriched = BrewServiceRepository::enrich_service_command_error("caddy", error);
+        let details = enriched
+            .downcast_ref::<AppError>()
+            .and_then(AppError::details)
+            .unwrap_or_else(|| enriched.to_string());
+
+        assert!(details.contains("must run as a non-root user login service"));
+        assert!(details.contains("sudo launchctl bootout system"));
+        assert!(details.contains("wrong scope"));
     }
 
     #[test]

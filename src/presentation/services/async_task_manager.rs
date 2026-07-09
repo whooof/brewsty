@@ -1,6 +1,6 @@
 use crate::domain::entities::brewfile::BrewfileSyncPreview;
 use crate::domain::entities::{
-    CleanupPreview, DoctorOutput, Package, PackageType, Service, ServiceInfo,
+    AppError, CleanupPreview, DoctorOutput, LoadState, Package, PackageType, Service, ServiceInfo,
 };
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -14,15 +14,15 @@ pub enum TaskKind {
 
 pub enum AsyncTask {
     LoadInstalled {
-        packages: Arc<Mutex<Vec<Package>>>,
+        state: Arc<Mutex<Option<LoadState<Vec<Package>>>>>,
         logs: Arc<Mutex<Vec<String>>>,
     },
     LoadOutdated {
-        packages: Arc<Mutex<Vec<Package>>>,
+        state: Arc<Mutex<Option<LoadState<Vec<Package>>>>>,
         logs: Arc<Mutex<Vec<String>>>,
     },
     Search {
-        results: Arc<Mutex<Vec<Package>>>,
+        state: Arc<Mutex<Option<LoadState<Vec<Package>>>>>,
         logs: Arc<Mutex<Vec<String>>>,
     },
     LoadPackageInfo {
@@ -32,156 +32,132 @@ pub enum AsyncTask {
         started_at: std::time::Instant,
     },
     Install {
-        success: Arc<Mutex<Option<bool>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
-        message: Arc<Mutex<String>>,
     },
     Uninstall {
-        success: Arc<Mutex<Option<bool>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
-        message: Arc<Mutex<String>>,
     },
     Update {
-        success: Arc<Mutex<Option<bool>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
-        message: Arc<Mutex<String>>,
     },
     UpdateAll {
-        success: Arc<Mutex<Option<bool>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
-        message: Arc<Mutex<String>>,
     },
     CleanCache {
-        success: Arc<Mutex<Option<bool>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
-        message: Arc<Mutex<String>>,
     },
     CleanupOldVersions {
-        success: Arc<Mutex<Option<bool>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
-        message: Arc<Mutex<String>>,
     },
     CleanOrphans {
-        success: Arc<Mutex<Option<bool>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
-        message: Arc<Mutex<String>>,
     },
     Pin {
         package_name: String,
-        success: Arc<Mutex<Option<bool>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
-        message: Arc<Mutex<String>>,
     },
     Unpin {
         package_name: String,
-        success: Arc<Mutex<Option<bool>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
-        message: Arc<Mutex<String>>,
     },
     LoadServices {
-        services: Arc<Mutex<Vec<Service>>>,
+        state: Arc<Mutex<Option<LoadState<Vec<Service>>>>>,
         logs: Arc<Mutex<Vec<String>>>,
     },
     StartService {
         service_name: String,
-        success: Arc<Mutex<Option<bool>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
-        message: Arc<Mutex<String>>,
     },
     StopService {
         service_name: String,
-        success: Arc<Mutex<Option<bool>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
-        message: Arc<Mutex<String>>,
     },
     RestartService {
         service_name: String,
-        success: Arc<Mutex<Option<bool>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
-        message: Arc<Mutex<String>>,
     },
     ExportPackages {
-        success: Arc<Mutex<Option<bool>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
-        message: Arc<Mutex<String>>,
     },
     ImportPackages {
-        success: Arc<Mutex<Option<bool>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
-        message: Arc<Mutex<String>>,
+    },
+    CheckUpdates {
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
+        logs: Arc<Mutex<Vec<String>>>,
     },
     CleanupPreview {
         cleanup_type: crate::presentation::components::CleanupType,
-        preview: Arc<Mutex<Option<CleanupPreview>>>,
-        error: Arc<Mutex<Option<String>>>,
+        result: Arc<Mutex<Option<Result<CleanupPreview, AppError>>>>,
     },
     Doctor {
-        result: Arc<Mutex<Option<DoctorOutput>>>,
-        error: Arc<Mutex<Option<String>>>,
+        result: Arc<Mutex<Option<Result<DoctorOutput, AppError>>>>,
     },
     LoadTaps {
-        taps: Arc<Mutex<Vec<String>>>,
+        state: Arc<Mutex<Option<LoadState<Vec<String>>>>>,
         logs: Arc<Mutex<Vec<String>>>,
     },
     Tap {
-        success: Arc<Mutex<Option<bool>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
-        message: Arc<Mutex<String>>,
     },
     Untap {
-        success: Arc<Mutex<Option<bool>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
-        message: Arc<Mutex<String>>,
     },
     BundleDump {
-        success: Arc<Mutex<Option<bool>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
-        message: Arc<Mutex<String>>,
     },
     BundleCheckPreview {
-        preview: Arc<Mutex<Option<BrewfileSyncPreview>>>,
-        error: Arc<Mutex<Option<String>>>,
+        result: Arc<Mutex<Option<Result<BrewfileSyncPreview, AppError>>>>,
     },
     BundleApply {
-        success: Arc<Mutex<Option<bool>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
         logs: Arc<Mutex<Vec<String>>>,
-        message: Arc<Mutex<String>>,
     },
     ServiceInfoLoad {
         service_name: String,
-        result: Arc<Mutex<Option<ServiceInfo>>>,
-        error: Arc<Mutex<Option<String>>>,
+        result: Arc<Mutex<Option<Result<ServiceInfo, AppError>>>>,
     },
     ServiceLogLoad {
         service_name: String,
-        result: Arc<Mutex<Option<String>>>,
-        error: Arc<Mutex<Option<String>>>,
+        result: Arc<Mutex<Option<Result<String, AppError>>>>,
     },
 }
 
-/// Shared state for async tasks that produce a success/failure result.
+/// Shared state for async tasks that produce a single structured result.
 pub struct TaskSharedState {
-    pub success: Arc<Mutex<Option<bool>>>,
+    pub result: Arc<Mutex<Option<Result<String, AppError>>>>,
     pub logs: Arc<Mutex<Vec<String>>>,
-    pub message: Arc<Mutex<String>>,
 }
 
 impl TaskSharedState {
     pub fn new() -> Self {
         Self {
-            success: Arc::new(Mutex::new(None)),
+            result: Arc::new(Mutex::new(None)),
             logs: Arc::new(Mutex::new(Vec::new())),
-            message: Arc::new(Mutex::new(String::new())),
         }
     }
 
     /// Write a successful result into the shared state.
     pub fn set_success(&self, msg: String) {
-        if let Ok(mut s) = self.success.lock() {
-            *s = Some(true);
-        }
-        if let Ok(mut m) = self.message.lock() {
-            *m = msg.clone();
+        if let Ok(mut result) = self.result.lock() {
+            *result = Some(Ok(msg.clone()));
         }
         if let Ok(mut l) = self.logs.lock() {
             l.push(msg);
@@ -189,80 +165,100 @@ impl TaskSharedState {
     }
 
     /// Write a failure result into the shared state.
-    pub fn set_failure(&self, msg: String) {
-        if let Ok(mut s) = self.success.lock() {
-            *s = Some(false);
-        }
-        if let Ok(mut m) = self.message.lock() {
-            *m = msg.clone();
+    pub fn set_failure(&self, error: AppError) {
+        if let Ok(mut result) = self.result.lock() {
+            *result = Some(Err(error.clone()));
         }
         if let Ok(mut l) = self.logs.lock() {
-            l.push(msg);
+            l.push(error.short_message());
+        }
+    }
+}
+
+pub struct LoadTaskSharedState<T> {
+    pub state: Arc<Mutex<Option<LoadState<T>>>>,
+    pub logs: Arc<Mutex<Vec<String>>>,
+}
+
+impl<T> LoadTaskSharedState<T> {
+    pub fn new() -> Self {
+        Self {
+            state: Arc::new(Mutex::new(None)),
+            logs: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    pub fn set_state(&self, state: LoadState<T>)
+    where
+        T: Clone,
+    {
+        if let Ok(mut result) = self.state.lock() {
+            *result = Some(state);
+        }
+    }
+
+    pub fn push_log(&self, message: String) {
+        if let Ok(mut logs) = self.logs.lock() {
+            logs.push(message);
         }
     }
 }
 
 pub struct TaskResult {
-    pub installed_packages: Option<(Vec<Package>, Vec<String>)>,
-    pub outdated_packages: Option<(Vec<Package>, Vec<String>)>,
-    pub search_results: Option<(Vec<Package>, Vec<String>)>,
+    pub installed_packages: Option<LoadState<Vec<Package>>>,
+    pub outdated_packages: Option<LoadState<Vec<Package>>>,
+    pub search_results: Option<LoadState<Vec<Package>>>,
     pub package_info: Option<(String, Package)>,
     pub logs: Vec<String>,
     pub completed_package_info_loads: Vec<String>,
-    pub install_completed: Option<(bool, String)>,
-    pub uninstall_completed: Option<(bool, String)>,
-    pub update_completed: Option<(bool, String)>,
-    pub update_all_completed: Option<(bool, String)>,
-    pub clean_cache_completed: Option<(bool, String)>,
-    pub cleanup_old_versions_completed: Option<(bool, String)>,
-    pub clean_orphans_completed: Option<(bool, String)>,
-    pub pin_completed: Option<(String, bool, String)>,
-    pub unpin_completed: Option<(String, bool, String)>,
-    pub services: Option<(Vec<Service>, Vec<String>)>,
-    pub start_service_completed: Option<(String, bool, String)>,
-    pub stop_service_completed: Option<(String, bool, String)>,
-    pub restart_service_completed: Option<(String, bool, String)>,
-    pub export_packages_completed: Option<(bool, String)>,
-    pub import_packages_completed: Option<(bool, String)>,
+    pub install_completed: Option<Result<String, AppError>>,
+    pub uninstall_completed: Option<Result<String, AppError>>,
+    pub update_completed: Option<Result<String, AppError>>,
+    pub update_all_completed: Option<Result<String, AppError>>,
+    pub clean_cache_completed: Option<Result<String, AppError>>,
+    pub cleanup_old_versions_completed: Option<Result<String, AppError>>,
+    pub clean_orphans_completed: Option<Result<String, AppError>>,
+    pub pin_completed: Option<(String, Result<String, AppError>)>,
+    pub unpin_completed: Option<(String, Result<String, AppError>)>,
+    pub services: Option<LoadState<Vec<Service>>>,
+    pub start_service_completed: Option<(String, Result<String, AppError>)>,
+    pub stop_service_completed: Option<(String, Result<String, AppError>)>,
+    pub restart_service_completed: Option<(String, Result<String, AppError>)>,
+    pub export_packages_completed: Option<Result<String, AppError>>,
+    pub import_packages_completed: Option<Result<String, AppError>>,
     pub cleanup_preview_result: Option<(
         crate::presentation::components::CleanupType,
-        Result<CleanupPreview, String>,
+        Result<CleanupPreview, AppError>,
     )>,
-    pub doctor_result: Option<Result<DoctorOutput, String>>,
-    pub taps: Option<(Vec<String>, Vec<String>)>,
-    pub tap_completed: Option<(bool, String)>,
-    pub untap_completed: Option<(bool, String)>,
-    pub bundle_dump_completed: Option<(bool, String)>,
-    pub bundle_check_preview_result: Option<Result<BrewfileSyncPreview, String>>,
-    pub bundle_apply_completed: Option<(bool, String)>,
-    pub service_info_result: Option<(String, Result<ServiceInfo, String>)>,
-    pub service_log_result: Option<(String, Result<String, String>)>,
+    pub doctor_result: Option<Result<DoctorOutput, AppError>>,
+    pub taps: Option<LoadState<Vec<String>>>,
+    pub tap_completed: Option<Result<String, AppError>>,
+    pub untap_completed: Option<Result<String, AppError>>,
+    pub bundle_dump_completed: Option<Result<String, AppError>>,
+    pub bundle_check_preview_result: Option<Result<BrewfileSyncPreview, AppError>>,
+    pub bundle_apply_completed: Option<Result<String, AppError>>,
+    pub service_info_result: Option<(String, Result<ServiceInfo, AppError>)>,
+    pub service_log_result: Option<(String, Result<String, AppError>)>,
 }
 
-/// Try to poll a completed success/logs/message task. Returns Some((succeeded, message, logs)) if done.
-fn poll_success_task(
-    success: &Arc<Mutex<Option<bool>>>,
+/// Try to poll a completed result/logs task.
+fn poll_result_task<T: Clone>(
+    result: &Arc<Mutex<Option<Result<T, AppError>>>>,
     logs: &Arc<Mutex<Vec<String>>>,
-    message: &Arc<Mutex<String>>,
-) -> Option<(bool, String, Vec<String>)> {
-    let success_opt = success.try_lock().ok()?;
-    let succeeded = (*success_opt)?;
-    let log = logs.try_lock().ok()?;
-    let msg = message.try_lock().ok()?;
-    Some((succeeded, msg.clone(), log.clone()))
+) -> Option<(Result<T, AppError>, Vec<String>)> {
+    let result = result.try_lock().ok()?.clone()?;
+    let logs = logs.try_lock().ok()?.clone();
+    Some((result, logs))
 }
 
-/// Try to poll a completed data/logs task. Returns Some((data, logs)) if done.
-fn poll_data_task<T: Clone>(
-    data: &Arc<Mutex<Vec<T>>>,
+/// Try to poll a completed load-state/logs task.
+fn poll_load_state_task<T: Clone>(
+    state: &Arc<Mutex<Option<LoadState<T>>>>,
     logs: &Arc<Mutex<Vec<String>>>,
-) -> Option<(Vec<T>, Vec<String>)> {
-    let log = logs.try_lock().ok()?;
-    if log.is_empty() {
-        return None;
-    }
-    let d = data.try_lock().ok()?;
-    Some((d.clone(), log.clone()))
+) -> Option<(LoadState<T>, Vec<String>)> {
+    let state = state.try_lock().ok()?.clone()?;
+    let logs = logs.try_lock().ok()?.clone();
+    Some((state, logs))
 }
 
 pub struct AsyncTaskManager {
@@ -445,290 +441,254 @@ impl AsyncTaskManager {
 
         for task in self.active_tasks.drain(..) {
             match task {
-                AsyncTask::LoadInstalled { packages, logs } => {
-                    if let Some((data, log)) = poll_data_task(&packages, &logs) {
-                        result.installed_packages = Some((data, log.clone()));
+                AsyncTask::LoadInstalled { state, logs } => {
+                    if let Some((state_result, log)) = poll_load_state_task(&state, &logs) {
+                        result.installed_packages = Some(state_result);
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::LoadInstalled { packages, logs });
+                        active_tasks_to_keep.push(AsyncTask::LoadInstalled { state, logs });
                     }
                 }
-                AsyncTask::LoadOutdated { packages, logs } => {
-                    if let Some((data, log)) = poll_data_task(&packages, &logs) {
-                        result.outdated_packages = Some((data, log.clone()));
+                AsyncTask::LoadOutdated { state, logs } => {
+                    if let Some((state_result, log)) = poll_load_state_task(&state, &logs) {
+                        result.outdated_packages = Some(state_result);
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::LoadOutdated { packages, logs });
+                        active_tasks_to_keep.push(AsyncTask::LoadOutdated { state, logs });
                     }
                 }
-                AsyncTask::Search { results, logs } => {
-                    if let Some((data, log)) = poll_data_task(&results, &logs) {
-                        tracing::info!("Search completed, found {} packages", data.len());
-                        result.search_results = Some((data, log.clone()));
+                AsyncTask::Search { state, logs } => {
+                    if let Some((state_result, log)) = poll_load_state_task(&state, &logs) {
+                        tracing::info!("Search task completed");
+                        result.search_results = Some(state_result);
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::Search { results, logs });
+                        active_tasks_to_keep.push(AsyncTask::Search { state, logs });
                     }
                 }
                 AsyncTask::Install {
-                    success,
+                    result: task_result,
                     logs,
-                    message,
                 } => {
-                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
-                        result.install_completed = Some((ok, msg));
+                    if let Some((task_result, log)) = poll_result_task(&task_result, &logs) {
+                        result.install_completed = Some(task_result);
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::Install {
-                            success,
+                            result: task_result,
                             logs,
-                            message,
                         });
                     }
                 }
                 AsyncTask::Uninstall {
-                    success,
+                    result: task_result,
                     logs,
-                    message,
                 } => {
-                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
-                        result.uninstall_completed = Some((ok, msg));
+                    if let Some((task_result, log)) = poll_result_task(&task_result, &logs) {
+                        result.uninstall_completed = Some(task_result);
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::Uninstall {
-                            success,
+                            result: task_result,
                             logs,
-                            message,
                         });
                     }
                 }
                 AsyncTask::Update {
-                    success,
+                    result: task_result,
                     logs,
-                    message,
                 } => {
-                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
-                        result.update_completed = Some((ok, msg));
+                    if let Some((task_result, log)) = poll_result_task(&task_result, &logs) {
+                        result.update_completed = Some(task_result);
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::Update {
-                            success,
+                            result: task_result,
                             logs,
-                            message,
                         });
                     }
                 }
                 AsyncTask::UpdateAll {
-                    success,
+                    result: task_result,
                     logs,
-                    message,
                 } => {
-                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
-                        result.update_all_completed = Some((ok, msg));
+                    if let Some((task_result, log)) = poll_result_task(&task_result, &logs) {
+                        result.update_all_completed = Some(task_result);
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::UpdateAll {
-                            success,
+                            result: task_result,
                             logs,
-                            message,
                         });
                     }
                 }
                 AsyncTask::CleanCache {
-                    success,
+                    result: task_result,
                     logs,
-                    message,
                 } => {
-                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
-                        result.clean_cache_completed = Some((ok, msg));
+                    if let Some((task_result, log)) = poll_result_task(&task_result, &logs) {
+                        result.clean_cache_completed = Some(task_result);
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::CleanCache {
-                            success,
+                            result: task_result,
                             logs,
-                            message,
                         });
                     }
                 }
                 AsyncTask::CleanupOldVersions {
-                    success,
+                    result: task_result,
                     logs,
-                    message,
                 } => {
-                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
-                        result.cleanup_old_versions_completed = Some((ok, msg));
+                    if let Some((task_result, log)) = poll_result_task(&task_result, &logs) {
+                        result.cleanup_old_versions_completed = Some(task_result);
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::CleanupOldVersions {
-                            success,
+                            result: task_result,
                             logs,
-                            message,
                         });
                     }
                 }
                 AsyncTask::CleanOrphans {
-                    success,
+                    result: task_result,
                     logs,
-                    message,
                 } => {
-                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
-                        result.clean_orphans_completed = Some((ok, msg));
+                    if let Some((task_result, log)) = poll_result_task(&task_result, &logs) {
+                        result.clean_orphans_completed = Some(task_result);
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::CleanOrphans {
-                            success,
+                            result: task_result,
                             logs,
-                            message,
                         });
                     }
                 }
                 AsyncTask::Pin {
                     package_name,
-                    success,
+                    result: task_result,
                     logs,
-                    message,
                 } => {
-                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
-                        result.pin_completed = Some((package_name, ok, msg));
+                    if let Some((task_result, log)) = poll_result_task(&task_result, &logs) {
+                        result.pin_completed = Some((package_name, task_result));
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::Pin {
                             package_name,
-                            success,
+                            result: task_result,
                             logs,
-                            message,
                         });
                     }
                 }
                 AsyncTask::Unpin {
                     package_name,
-                    success,
+                    result: task_result,
                     logs,
-                    message,
                 } => {
-                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
-                        result.unpin_completed = Some((package_name, ok, msg));
+                    if let Some((task_result, log)) = poll_result_task(&task_result, &logs) {
+                        result.unpin_completed = Some((package_name, task_result));
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::Unpin {
                             package_name,
-                            success,
+                            result: task_result,
                             logs,
-                            message,
                         });
                     }
                 }
-                AsyncTask::LoadServices { services, logs } => {
-                    if let Some((data, log)) = poll_data_task(&services, &logs) {
-                        result.services = Some((data, log.clone()));
+                AsyncTask::LoadServices { state, logs } => {
+                    if let Some((state_result, log)) = poll_load_state_task(&state, &logs) {
+                        result.services = Some(state_result);
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::LoadServices { services, logs });
+                        active_tasks_to_keep.push(AsyncTask::LoadServices { state, logs });
                     }
                 }
                 AsyncTask::StartService {
                     service_name,
-                    success,
+                    result: task_result,
                     logs,
-                    message,
                 } => {
-                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
-                        result.start_service_completed = Some((service_name, ok, msg));
+                    if let Some((task_result, log)) = poll_result_task(&task_result, &logs) {
+                        result.start_service_completed = Some((service_name, task_result));
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::StartService {
                             service_name,
-                            success,
+                            result: task_result,
                             logs,
-                            message,
                         });
                     }
                 }
                 AsyncTask::StopService {
                     service_name,
-                    success,
+                    result: task_result,
                     logs,
-                    message,
                 } => {
-                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
-                        result.stop_service_completed = Some((service_name, ok, msg));
+                    if let Some((task_result, log)) = poll_result_task(&task_result, &logs) {
+                        result.stop_service_completed = Some((service_name, task_result));
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::StopService {
                             service_name,
-                            success,
+                            result: task_result,
                             logs,
-                            message,
                         });
                     }
                 }
                 AsyncTask::RestartService {
                     service_name,
-                    success,
+                    result: task_result,
                     logs,
-                    message,
                 } => {
-                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
-                        result.restart_service_completed = Some((service_name, ok, msg));
+                    if let Some((task_result, log)) = poll_result_task(&task_result, &logs) {
+                        result.restart_service_completed = Some((service_name, task_result));
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::RestartService {
                             service_name,
-                            success,
+                            result: task_result,
                             logs,
-                            message,
                         });
                     }
                 }
                 AsyncTask::ExportPackages {
-                    success,
+                    result: task_result,
                     logs,
-                    message,
                 } => {
-                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
-                        result.export_packages_completed = Some((ok, msg));
+                    if let Some((task_result, log)) = poll_result_task(&task_result, &logs) {
+                        result.export_packages_completed = Some(task_result);
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::ExportPackages {
-                            success,
+                            result: task_result,
                             logs,
-                            message,
                         });
                     }
                 }
                 AsyncTask::ImportPackages {
-                    success,
+                    result: task_result,
                     logs,
-                    message,
                 } => {
-                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
-                        result.import_packages_completed = Some((ok, msg));
+                    if let Some((task_result, log)) = poll_result_task(&task_result, &logs) {
+                        result.import_packages_completed = Some(task_result);
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::ImportPackages {
-                            success,
+                            result: task_result,
                             logs,
-                            message,
                         });
                     }
                 }
                 AsyncTask::CleanupPreview {
                     cleanup_type,
-                    preview,
-                    error,
+                    result: task_result,
                 } => {
-                    let done = if let Ok(err) = error.try_lock() {
-                        if let Some(err_msg) = err.as_ref() {
+                    let done = if let Ok(task_result) = task_result.try_lock() {
+                        if let Some(task_result) = task_result.as_ref() {
                             result.cleanup_preview_result =
-                                Some((cleanup_type, Err(err_msg.clone())));
+                                Some((cleanup_type, task_result.clone()));
                             true
-                        } else if let Ok(prev) = preview.try_lock() {
-                            if let Some(p) = prev.as_ref() {
-                                result.cleanup_preview_result = Some((cleanup_type, Ok(p.clone())));
-                                true
-                            } else {
-                                false
-                            }
                         } else {
                             false
                         }
@@ -738,26 +698,15 @@ impl AsyncTaskManager {
                     if !done {
                         active_tasks_to_keep.push(AsyncTask::CleanupPreview {
                             cleanup_type,
-                            preview,
-                            error,
+                            result: task_result,
                         });
                     }
                 }
-                AsyncTask::Doctor {
-                    result: doc_result,
-                    error,
-                } => {
-                    let done = if let Ok(err) = error.try_lock() {
-                        if let Some(err_msg) = err.as_ref() {
-                            result.doctor_result = Some(Err(err_msg.clone()));
+                AsyncTask::Doctor { result: doc_result } => {
+                    let done = if let Ok(doc_result) = doc_result.try_lock() {
+                        if let Some(doc_result) = doc_result.as_ref() {
+                            result.doctor_result = Some(doc_result.clone());
                             true
-                        } else if let Ok(res) = doc_result.try_lock() {
-                            if let Some(r) = res.as_ref() {
-                                result.doctor_result = Some(Ok(r.clone()));
-                                true
-                            } else {
-                                false
-                            }
                         } else {
                             false
                         }
@@ -765,80 +714,66 @@ impl AsyncTaskManager {
                         false
                     };
                     if !done {
-                        active_tasks_to_keep.push(AsyncTask::Doctor {
-                            result: doc_result,
-                            error,
-                        });
+                        active_tasks_to_keep.push(AsyncTask::Doctor { result: doc_result });
                     }
                 }
-                AsyncTask::LoadTaps { taps, logs } => {
-                    if let Some((data, log)) = poll_data_task(&taps, &logs) {
-                        result.taps = Some((data, log.clone()));
+                AsyncTask::LoadTaps { state, logs } => {
+                    if let Some((state_result, log)) = poll_load_state_task(&state, &logs) {
+                        result.taps = Some(state_result);
                         result.logs.extend(log);
                     } else {
-                        active_tasks_to_keep.push(AsyncTask::LoadTaps { taps, logs });
+                        active_tasks_to_keep.push(AsyncTask::LoadTaps { state, logs });
                     }
                 }
                 AsyncTask::Tap {
-                    success,
+                    result: task_result,
                     logs,
-                    message,
                 } => {
-                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
-                        result.tap_completed = Some((ok, msg));
+                    if let Some((task_result, log)) = poll_result_task(&task_result, &logs) {
+                        result.tap_completed = Some(task_result);
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::Tap {
-                            success,
+                            result: task_result,
                             logs,
-                            message,
                         });
                     }
                 }
                 AsyncTask::Untap {
-                    success,
+                    result: task_result,
                     logs,
-                    message,
                 } => {
-                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
-                        result.untap_completed = Some((ok, msg));
+                    if let Some((task_result, log)) = poll_result_task(&task_result, &logs) {
+                        result.untap_completed = Some(task_result);
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::Untap {
-                            success,
+                            result: task_result,
                             logs,
-                            message,
                         });
                     }
                 }
                 AsyncTask::BundleDump {
-                    success,
+                    result: task_result,
                     logs,
-                    message,
                 } => {
-                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
-                        result.bundle_dump_completed = Some((ok, msg));
+                    if let Some((task_result, log)) = poll_result_task(&task_result, &logs) {
+                        result.bundle_dump_completed = Some(task_result);
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::BundleDump {
-                            success,
+                            result: task_result,
                             logs,
-                            message,
                         });
                     }
                 }
-                AsyncTask::BundleCheckPreview { preview, error } => {
-                    let done = if let Ok(err) = error.try_lock() {
-                        if let Some(err_msg) = err.as_ref() {
-                            result.bundle_check_preview_result = Some(Err(err_msg.clone()));
+                AsyncTask::BundleCheckPreview {
+                    result: task_result,
+                } => {
+                    let done = if let Ok(task_result) = task_result.try_lock() {
+                        if let Some(task_result) = task_result.as_ref() {
+                            result.bundle_check_preview_result = Some(task_result.clone());
                             true
-                        } else if let Ok(prev) = preview.try_lock() {
-                            if let Some(p) = prev.as_ref() {
-                                result.bundle_check_preview_result = Some(Ok(p.clone()));
-                                true
-                            } else {
-                                false
-                            }
                         } else {
                             false
                         }
@@ -846,43 +781,34 @@ impl AsyncTaskManager {
                         false
                     };
                     if !done {
-                        active_tasks_to_keep.push(AsyncTask::BundleCheckPreview { preview, error });
+                        active_tasks_to_keep.push(AsyncTask::BundleCheckPreview {
+                            result: task_result,
+                        });
                     }
                 }
                 AsyncTask::BundleApply {
-                    success,
+                    result: task_result,
                     logs,
-                    message,
                 } => {
-                    if let Some((ok, msg, log)) = poll_success_task(&success, &logs, &message) {
-                        result.bundle_apply_completed = Some((ok, msg));
+                    if let Some((task_result, log)) = poll_result_task(&task_result, &logs) {
+                        result.bundle_apply_completed = Some(task_result);
                         result.logs.extend(log);
                     } else {
                         active_tasks_to_keep.push(AsyncTask::BundleApply {
-                            success,
+                            result: task_result,
                             logs,
-                            message,
                         });
                     }
                 }
                 AsyncTask::ServiceInfoLoad {
                     service_name,
                     result: info_result,
-                    error,
                 } => {
-                    let done = if let Ok(err) = error.try_lock() {
-                        if let Some(err_msg) = err.as_ref() {
+                    let done = if let Ok(info_result) = info_result.try_lock() {
+                        if let Some(info_result) = info_result.as_ref() {
                             result.service_info_result =
-                                Some((service_name.clone(), Err(err_msg.clone())));
+                                Some((service_name.clone(), info_result.clone()));
                             true
-                        } else if let Ok(res) = info_result.try_lock() {
-                            if let Some(info) = res.as_ref() {
-                                result.service_info_result =
-                                    Some((service_name.clone(), Ok(info.clone())));
-                                true
-                            } else {
-                                false
-                            }
                         } else {
                             false
                         }
@@ -893,28 +819,18 @@ impl AsyncTaskManager {
                         active_tasks_to_keep.push(AsyncTask::ServiceInfoLoad {
                             service_name,
                             result: info_result,
-                            error,
                         });
                     }
                 }
                 AsyncTask::ServiceLogLoad {
                     service_name,
                     result: log_result,
-                    error,
                 } => {
-                    let done = if let Ok(err) = error.try_lock() {
-                        if let Some(err_msg) = err.as_ref() {
+                    let done = if let Ok(log_result) = log_result.try_lock() {
+                        if let Some(log_result) = log_result.as_ref() {
                             result.service_log_result =
-                                Some((service_name.clone(), Err(err_msg.clone())));
+                                Some((service_name.clone(), log_result.clone()));
                             true
-                        } else if let Ok(res) = log_result.try_lock() {
-                            if let Some(log_text) = res.as_ref() {
-                                result.service_log_result =
-                                    Some((service_name.clone(), Ok(log_text.clone())));
-                                true
-                            } else {
-                                false
-                            }
                         } else {
                             false
                         }
@@ -925,11 +841,11 @@ impl AsyncTaskManager {
                         active_tasks_to_keep.push(AsyncTask::ServiceLogLoad {
                             service_name,
                             result: log_result,
-                            error,
                         });
                     }
                 }
                 AsyncTask::LoadPackageInfo { .. } => {}
+                AsyncTask::CheckUpdates { .. } => {}
             }
         }
 

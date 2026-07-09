@@ -1,3 +1,4 @@
+use crate::domain::entities::{AppError, MessageSeverity};
 use egui::{Align2, Area, Color32, CornerRadius, Frame, Id, Margin, Order, RichText};
 use std::time::{Duration, Instant};
 
@@ -8,11 +9,25 @@ pub enum ToastType {
     Error,
 }
 
+impl From<MessageSeverity> for ToastType {
+    fn from(severity: MessageSeverity) -> Self {
+        match severity {
+            MessageSeverity::Info => ToastType::Info,
+            MessageSeverity::Success => ToastType::Success,
+            MessageSeverity::Warning => ToastType::Info,
+            MessageSeverity::Error => ToastType::Error,
+        }
+    }
+}
+
 pub struct Toast {
     id: Id,
     message: String,
+    details: Option<String>,
     toast_type: ToastType,
     expires_at: Instant,
+    occurrences: usize,
+    expanded: bool,
 }
 
 pub struct ToastManager {
@@ -37,24 +52,81 @@ impl ToastManager {
     }
 
     pub fn success(&mut self, message: impl Into<String>) {
-        self.add(message, ToastType::Success);
+        self.add(message, None::<String>, ToastType::Success);
     }
 
     pub fn error(&mut self, message: impl Into<String>) {
-        self.add(message, ToastType::Error);
+        self.add(message, None::<String>, ToastType::Error);
+    }
+
+    /// Show error toast with detailed information
+    pub fn error_with_details(&mut self, message: impl Into<String>, details: impl Into<String>) {
+        self.add(message, Some(details.into()), ToastType::Error);
+    }
+
+    /// Show error toast from AppError with automatic details extraction
+    pub fn error_from_app_error(&mut self, error: &AppError) {
+        let message = error.short_message();
+        let details = error.details().unwrap_or_else(|| error.to_string());
+        self.add(message, Some(details), ToastType::Error);
+    }
+
+    /// Show toast with MessageSeverity
+    pub fn show_with_severity(&mut self, message: impl Into<String>, severity: MessageSeverity) {
+        let toast_type = ToastType::from(severity);
+        self.add(message, None::<String>, toast_type);
+    }
+
+    /// Show toast with MessageSeverity and details
+    pub fn show_with_severity_and_details(
+        &mut self,
+        message: impl Into<String>,
+        details: impl Into<String>,
+        severity: MessageSeverity,
+    ) {
+        let toast_type = ToastType::from(severity);
+        self.add(message, Some(details.into()), toast_type);
     }
 
     pub fn info(&mut self, message: impl Into<String>) {
-        self.add(message, ToastType::Info);
+        self.add(message, None::<String>, ToastType::Info);
     }
 
-    fn add(&mut self, message: impl Into<String>, toast_type: ToastType) {
+    fn add(&mut self, message: impl Into<String>, details: Option<String>, toast_type: ToastType) {
+        let message = message.into();
         let now = Instant::now();
+
+        if let Some(existing) = self
+            .toasts
+            .iter_mut()
+            .find(|toast| toast.message == message && toast.toast_type == toast_type)
+        {
+            existing.expires_at = now
+                + if toast_type == ToastType::Error {
+                    self.duration + Duration::from_secs(4)
+                } else {
+                    self.duration
+                };
+            existing.occurrences += 1;
+            if existing.details.is_none() {
+                existing.details = details;
+            }
+            return;
+        }
+
         self.toasts.push(Toast {
             id: Id::new(format!("toast_{}", self.next_id)),
-            message: message.into(),
+            message,
+            details,
             toast_type,
-            expires_at: now + self.duration,
+            expires_at: now
+                + if toast_type == ToastType::Error {
+                    self.duration + Duration::from_secs(4)
+                } else {
+                    self.duration
+                },
+            occurrences: 1,
+            expanded: false,
         });
         self.next_id = self.next_id.wrapping_add(1);
     }
@@ -69,7 +141,9 @@ impl ToastManager {
 
         let mut y_offset = 50.0; // Start offset from top right
 
-        for toast in self.toasts.iter().rev() {
+        let mut dismiss_ids = Vec::new();
+
+        for toast in self.toasts.iter_mut().rev() {
             // Show newest at top
             let (bg_color, text_color, icon) = match toast.toast_type {
                 ToastType::Success => (Color32::from_rgb(46, 125, 50), Color32::WHITE, "✅ "),
@@ -103,27 +177,60 @@ impl ToastManager {
                 .order(Order::Tooltip)
                 .anchor(Align2::RIGHT_TOP, [-20.0, y_offset])
                 .show(ctx, |ui| {
-                    let mut frame = frame.clone();
+                    let mut frame = frame;
                     frame.fill = frame.fill.linear_multiply(alpha);
                     frame.stroke.color = frame.stroke.color.linear_multiply(alpha);
 
                     let response = frame
                         .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    RichText::new(icon).color(text_color.linear_multiply(alpha)),
-                                );
-                                ui.label(
-                                    RichText::new(&toast.message)
-                                        .color(text_color.linear_multiply(alpha))
-                                        .strong(),
-                                );
+                            ui.vertical(|ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        RichText::new(icon)
+                                            .color(text_color.linear_multiply(alpha)),
+                                    );
+                                    let message = if toast.occurrences > 1 {
+                                        format!("{} ({})", toast.message, toast.occurrences)
+                                    } else {
+                                        toast.message.clone()
+                                    };
+                                    ui.label(
+                                        RichText::new(message)
+                                            .color(text_color.linear_multiply(alpha))
+                                            .strong(),
+                                    );
+                                    if ui.small_button("Dismiss").clicked() {
+                                        dismiss_ids.push(toast.id);
+                                    }
+                                });
+                                if let Some(details) = &toast.details {
+                                    let toggle_label = if toast.expanded {
+                                        "Hide details"
+                                    } else {
+                                        "Show details"
+                                    };
+                                    if ui.small_button(toggle_label).clicked() {
+                                        toast.expanded = !toast.expanded;
+                                    }
+                                    if toast.expanded {
+                                        ui.add_space(4.0);
+                                        ui.label(
+                                            RichText::new(details)
+                                                .color(text_color.linear_multiply(alpha))
+                                                .monospace(),
+                                        );
+                                    }
+                                }
                             });
                         })
                         .response;
 
                     y_offset += response.rect.height() + 10.0;
                 });
+        }
+
+        if !dismiss_ids.is_empty() {
+            self.toasts.retain(|toast| !dismiss_ids.contains(&toast.id));
         }
 
         ctx.request_repaint(); // Keep repainting for smooth fade out

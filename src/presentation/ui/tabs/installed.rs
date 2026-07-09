@@ -1,6 +1,6 @@
-use crate::domain::entities::{Package, PackageType};
+use crate::domain::entities::Package;
 use crate::presentation::components::{
-    FilterState, InfoModal, MergedPackageList, SortField, SortOrder,
+    FilterState, MergedPackageList, PackageDetailsModal, SortField, SortOrder,
 };
 use eframe::egui;
 use std::collections::HashSet;
@@ -13,7 +13,7 @@ pub enum InstalledAction {
     UpdateSelected(Vec<String>),
     Pin(Package),
     Unpin(Package),
-    LoadInfo(String, PackageType),
+    ShowPackageDetails(String),
 }
 
 pub struct InstalledTab;
@@ -27,7 +27,7 @@ impl InstalledTab {
         packages_in_operation: &HashSet<String>,
         loading_installed: bool,
         loading_outdated: bool,
-        info_modal: &mut InfoModal,
+        package_details_modal: &mut PackageDetailsModal,
     ) -> Vec<InstalledAction> {
         let mut actions = Vec::new();
 
@@ -137,13 +137,10 @@ impl InstalledTab {
                 actions.push(InstalledAction::Unpin(package));
             }
             if let Some(package) = load_info_action {
-                actions.push(InstalledAction::LoadInfo(
-                    package.name,
-                    package.package_type,
-                ));
+                actions.push(InstalledAction::ShowPackageDetails(package.name.clone()));
             }
             if let Some(package) = merged_packages.get_show_info_action() {
-                info_modal.show(package);
+                package_details_modal.open_for_package(&package);
             }
         }
 

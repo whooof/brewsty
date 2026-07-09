@@ -14,12 +14,11 @@ Run `brew bundle cleanup --force` to make these changes.";
 
     let mut missing = Vec::new();
     for line in check_output.lines() {
-        if line.starts_with("→ ") {
-            if let Some(dep) = line.strip_prefix("→ ") {
-                if let Some(idx) = dep.find(" needs to be installed or updated.") {
-                    missing.push(dep[..idx].to_string());
-                }
-            }
+        if line.starts_with("→ ")
+            && let Some(dep) = line.strip_prefix("→ ")
+            && let Some(idx) = dep.find(" needs to be installed or updated.")
+        {
+            missing.push(dep[..idx].to_string());
         }
     }
 

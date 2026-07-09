@@ -1,7 +1,8 @@
+use crate::application::use_cases::{export_brewfile_ruby, generate_brewfile};
 use crate::domain::entities::OperationType;
-use crate::domain::entities::{Package, PackageType};
+use crate::domain::entities::{AppError, LoadState, Package, PackageType};
 use crate::presentation::components::CleanupType;
-use crate::presentation::services::{AsyncTask, TaskSharedState};
+use crate::presentation::services::{AsyncTask, LoadTaskSharedState, TaskSharedState};
 use crate::presentation::ui::tabs::history::UndoRequest;
 use std::sync::{Arc, Mutex};
 
@@ -38,14 +39,18 @@ impl BrewstyApp {
         }
 
         self.loading_installed = true;
+        self.installed_state = LoadState::Loading;
         if include_outdated {
             self.loading_outdated = true;
+            self.outdated_state = LoadState::Loading;
         }
+        self.installed_message = None;
         self.status_message = if include_outdated {
             "Loading installed and outdated packages...".to_string()
         } else {
             "Loading installed packages...".to_string()
         };
+        self.set_operation_running("Loading packages", None);
 
         if include_outdated {
             self.log_manager
@@ -60,20 +65,18 @@ impl BrewstyApp {
         let use_case_installed = Arc::clone(&self.use_cases.list_installed);
         let use_case_outdated = Arc::clone(&self.use_cases.list_outdated);
 
-        let installed_packages = Arc::new(Mutex::new(Vec::new()));
-        let outdated_packages = Arc::new(Mutex::new(Vec::new()));
-        let installed_log = Arc::new(Mutex::new(Vec::new()));
-        let outdated_log = Arc::new(Mutex::new(Vec::new()));
+        let installed_state = LoadTaskSharedState::new();
+        let outdated_state = LoadTaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::LoadInstalled {
-            packages: Arc::clone(&installed_packages),
-            logs: Arc::clone(&installed_log),
+            state: Arc::clone(&installed_state.state),
+            logs: Arc::clone(&installed_state.logs),
         });
 
         if include_outdated {
             self.task_manager.set_active_task(AsyncTask::LoadOutdated {
-                packages: Arc::clone(&outdated_packages),
-                logs: Arc::clone(&outdated_log),
+                state: Arc::clone(&outdated_state.state),
+                logs: Arc::clone(&outdated_state.logs),
             });
         }
 
@@ -137,6 +140,22 @@ impl BrewstyApp {
                 let mut outdated = Vec::new();
                 let mut installed_logs_vec = Vec::new();
                 let mut outdated_logs_vec = Vec::new();
+                let installed_formulae_error = installed_formulae_result
+                    .as_ref()
+                    .err()
+                    .map(|error| AppError::classify_message(error.to_string()));
+                let installed_casks_error = installed_casks_result
+                    .as_ref()
+                    .err()
+                    .map(|error| AppError::classify_message(error.to_string()));
+                let outdated_formulae_error = outdated_formulae_result
+                    .as_ref()
+                    .err()
+                    .map(|error| AppError::classify_message(error.to_string()));
+                let outdated_casks_error = outdated_casks_result
+                    .as_ref()
+                    .err()
+                    .map(|error| AppError::classify_message(error.to_string()));
 
                 match installed_formulae_result {
                     Ok(pkgs) => {
@@ -196,24 +215,6 @@ impl BrewstyApp {
                     }
                 }
 
-                tracing::debug!(
-                    "About to write {} installed packages to mutex",
-                    installed.len()
-                );
-                *installed_packages
-                    .lock()
-                    .map_err(|e| anyhow::anyhow!("Failed to lock installed packages: {}", e))? =
-                    installed;
-
-                tracing::debug!(
-                    "About to write {} outdated packages to mutex",
-                    outdated.len()
-                );
-                *outdated_packages
-                    .lock()
-                    .map_err(|e| anyhow::anyhow!("Failed to lock outdated packages: {}", e))? =
-                    outdated;
-
                 installed_logs_vec.push("Finished loading installed packages".to_string());
                 if include_outdated {
                     outdated_logs_vec.push("Finished loading outdated packages".to_string());
@@ -222,23 +223,41 @@ impl BrewstyApp {
                     tracing::info!("Finished loading installed packages");
                 }
 
-                tracing::debug!(
-                    "About to lock installed logs mutex with {} log entries",
-                    installed_logs_vec.len()
-                );
-                *installed_log
-                    .lock()
-                    .map_err(|e| anyhow::anyhow!("Failed to lock installed logs: {}", e))? =
-                    installed_logs_vec;
+                for log in installed_logs_vec {
+                    installed_state.push_log(log);
+                }
+                for log in outdated_logs_vec {
+                    outdated_state.push_log(log);
+                }
 
-                tracing::debug!(
-                    "About to lock outdated logs mutex with {} log entries",
-                    outdated_logs_vec.len()
-                );
-                *outdated_log
-                    .lock()
-                    .map_err(|e| anyhow::anyhow!("Failed to lock outdated logs: {}", e))? =
-                    outdated_logs_vec;
+                let installed_load_state = match (installed_formulae_error, installed_casks_error) {
+                    (None, None) => LoadState::Ready(installed),
+                    (Some(error), None) | (None, Some(error)) => LoadState::Partial {
+                        data: installed,
+                        warning: error,
+                    },
+                    (Some(left), Some(right)) => LoadState::Error(AppError::Unknown(format!(
+                        "{}; {}",
+                        left.short_message(),
+                        right.short_message()
+                    ))),
+                };
+                installed_state.set_state(installed_load_state);
+
+                if include_outdated {
+                    let outdated_load_state =
+                        match (outdated_formulae_error, outdated_casks_error) {
+                            (None, None) => LoadState::Ready(outdated),
+                            (Some(error), None) | (None, Some(error)) => LoadState::Partial {
+                                data: outdated,
+                                warning: error,
+                            },
+                            (Some(left), Some(right)) => LoadState::Error(AppError::Unknown(
+                                format!("{}; {}", left.short_message(), right.short_message()),
+                            )),
+                        };
+                    outdated_state.set_state(outdated_load_state);
+                }
 
                 tracing::debug!("Successfully updated mutexes");
 
@@ -248,9 +267,8 @@ impl BrewstyApp {
 
             if let Err(e) = task_result {
                 tracing::error!("Error in load_installed_packages task: {}", e);
-                if let Ok(mut logs) = installed_log.lock() {
-                    logs.push(format!("Task error: {}", e));
-                }
+                installed_state.push_log(format!("Task error: {}", e));
+                installed_state.set_state(LoadState::Error(AppError::from_anyhow(e)));
             }
             tracing::trace!("TASK ENDED: load_installed_packages");
         });
@@ -316,10 +334,6 @@ impl BrewstyApp {
         self.handle_update(package);
     }
 
-    pub(super) fn is_auth_cancelled(&self, error_msg: &str) -> bool {
-        error_msg.contains("Password prompt was cancelled")
-    }
-
     pub(super) fn handle_install(&mut self, package: Package) {
         if self.loading_install {
             return;
@@ -327,7 +341,7 @@ impl BrewstyApp {
 
         let package_name = package.name.clone();
         self.loading_install = true;
-        self.loading = true;
+        self.set_operation_running("Installing", Some(package_name.clone()));
         self.current_install_package = Some(package_name.clone());
         self.packages_in_operation.insert(package_name.clone());
         self.status_message = format!("Installing {}...", package.name);
@@ -342,9 +356,8 @@ impl BrewstyApp {
         let shared = TaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::Install {
-            success: Arc::clone(&shared.success),
+            result: Arc::clone(&shared.result),
             logs: Arc::clone(&shared.logs),
-            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.install);
@@ -352,7 +365,7 @@ impl BrewstyApp {
         self.executor.spawn(async move {
             match use_case.execute(package).await {
                 Ok(_) => shared.set_success(format!("Successfully installed {}", package_name)),
-                Err(e) => shared.set_failure(format!("Error installing {}: {}", package_name, e)),
+                Err(e) => shared.set_failure(AppError::from_anyhow(e)),
             }
         });
     }
@@ -364,7 +377,7 @@ impl BrewstyApp {
 
         let package_name = package.name.clone();
         self.loading_uninstall = true;
-        self.loading = true;
+        self.set_operation_running("Uninstalling", Some(package_name.clone()));
         self.current_uninstall_package = Some(package_name.clone());
         self.packages_in_operation.insert(package_name.clone());
         self.status_message = format!("Uninstalling {}...", package.name);
@@ -379,9 +392,8 @@ impl BrewstyApp {
         let shared = TaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::Uninstall {
-            success: Arc::clone(&shared.success),
+            result: Arc::clone(&shared.result),
             logs: Arc::clone(&shared.logs),
-            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.uninstall);
@@ -389,7 +401,7 @@ impl BrewstyApp {
         self.executor.spawn(async move {
             match use_case.execute(package).await {
                 Ok(_) => shared.set_success(format!("Successfully uninstalled {}", package_name)),
-                Err(e) => shared.set_failure(format!("Error uninstalling {}: {}", package_name, e)),
+                Err(e) => shared.set_failure(AppError::from_anyhow(e)),
             }
         });
     }
@@ -401,7 +413,7 @@ impl BrewstyApp {
 
         let package_name = package.name.clone();
         self.loading_update = true;
-        self.loading = true;
+        self.set_operation_running("Updating", Some(package_name.clone()));
         self.current_update_package = Some(package_name.clone());
         self.packages_in_operation.insert(package_name.clone());
         self.status_message = format!("Updating {}...", package.name);
@@ -416,9 +428,8 @@ impl BrewstyApp {
         let shared = TaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::Update {
-            success: Arc::clone(&shared.success),
+            result: Arc::clone(&shared.result),
             logs: Arc::clone(&shared.logs),
-            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.update);
@@ -426,13 +437,13 @@ impl BrewstyApp {
         self.executor.spawn(async move {
             match use_case.execute(&package).await {
                 Ok(_) => shared.set_success(format!("Successfully updated {}", package_name)),
-                Err(e) => shared.set_failure(format!("Error updating {}: {}", package_name, e)),
+                Err(e) => shared.set_failure(AppError::from_anyhow(e)),
             }
         });
     }
 
     pub(super) fn handle_pin(&mut self, package: Package) {
-        self.loading = true;
+        self.set_operation_running("Pinning", Some(package.name.clone()));
         self.packages_in_operation.insert(package.name.clone());
         self.status_message = format!("Pinning {}...", package.name);
 
@@ -448,9 +459,8 @@ impl BrewstyApp {
 
         self.task_manager.set_active_task(AsyncTask::Pin {
             package_name: package.name.clone(),
-            success: Arc::clone(&shared.success),
+            result: Arc::clone(&shared.result),
             logs: Arc::clone(&shared.logs),
-            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.pin);
@@ -458,13 +468,13 @@ impl BrewstyApp {
         self.executor.spawn(async move {
             match use_case.execute(package).await {
                 Ok(_) => shared.set_success(format!("Successfully pinned {}", package_name)),
-                Err(e) => shared.set_failure(format!("Error pinning {}: {}", package_name, e)),
+                Err(e) => shared.set_failure(AppError::from_anyhow(e)),
             }
         });
     }
 
     pub(super) fn handle_unpin(&mut self, package: Package) {
-        self.loading = true;
+        self.set_operation_running("Unpinning", Some(package.name.clone()));
         self.packages_in_operation.insert(package.name.clone());
         self.status_message = format!("Unpinning {}...", package.name);
 
@@ -480,9 +490,8 @@ impl BrewstyApp {
 
         self.task_manager.set_active_task(AsyncTask::Unpin {
             package_name: package.name.clone(),
-            success: Arc::clone(&shared.success),
+            result: Arc::clone(&shared.result),
             logs: Arc::clone(&shared.logs),
-            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.unpin);
@@ -490,7 +499,7 @@ impl BrewstyApp {
         self.executor.spawn(async move {
             match use_case.execute(package).await {
                 Ok(_) => shared.set_success(format!("Successfully unpinned {}", package_name)),
-                Err(e) => shared.set_failure(format!("Error unpinning {}: {}", package_name, e)),
+                Err(e) => shared.set_failure(AppError::from_anyhow(e)),
             }
         });
     }
@@ -501,18 +510,20 @@ impl BrewstyApp {
         }
 
         self.loading_services = true;
+        self.services_state = LoadState::Loading;
+        self.services_message = None;
+        self.set_operation_running("Loading services", None);
         self.status_message = "Loading services...".to_string();
         self.log_manager.push("Loading brew services".to_string());
         tracing::info!("Loading brew services");
 
         let use_case = Arc::clone(&self.use_cases.list_services);
 
-        let services = Arc::new(Mutex::new(Vec::new()));
-        let logs = Arc::new(Mutex::new(Vec::new()));
+        let shared = LoadTaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::LoadServices {
-            services: Arc::clone(&services),
-            logs: Arc::clone(&logs),
+            state: Arc::clone(&shared.state),
+            logs: Arc::clone(&shared.logs),
         });
 
         self.executor.spawn(async move {
@@ -520,19 +531,14 @@ impl BrewstyApp {
                 Ok(service_list) => {
                     let msg = format!("Loaded {} services", service_list.len());
                     tracing::info!("{}", msg);
-                    if let Ok(mut services_guard) = services.lock() {
-                        *services_guard = service_list;
-                    }
-                    if let Ok(mut logs_guard) = logs.lock() {
-                        *logs_guard = vec![msg];
-                    }
+                    shared.push_log(msg);
+                    shared.set_state(LoadState::Ready(service_list));
                 }
                 Err(e) => {
                     let msg = format!("Error loading services: {}", e);
                     tracing::error!("{}", msg);
-                    if let Ok(mut logs_guard) = logs.lock() {
-                        *logs_guard = vec![msg];
-                    }
+                    shared.push_log(msg);
+                    shared.set_state(LoadState::Error(AppError::from_anyhow(e)));
                 }
             }
         });
@@ -540,6 +546,7 @@ impl BrewstyApp {
 
     pub(super) fn handle_start_service(&mut self, service_name: String) {
         self.services_in_operation.insert(service_name.clone());
+        self.set_operation_running("Starting service", Some(service_name.clone()));
         self.status_message = format!("Starting service {}...", service_name);
 
         let initial_msg = format!("Starting service: {}", service_name);
@@ -550,9 +557,8 @@ impl BrewstyApp {
 
         self.task_manager.set_active_task(AsyncTask::StartService {
             service_name: service_name.clone(),
-            success: Arc::clone(&shared.success),
+            result: Arc::clone(&shared.result),
             logs: Arc::clone(&shared.logs),
-            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.start_service);
@@ -563,15 +569,14 @@ impl BrewstyApp {
                 Ok(_) => {
                     shared.set_success(format!("Successfully started service {}", service_name))
                 }
-                Err(e) => {
-                    shared.set_failure(format!("Error starting service {}: {}", service_name, e))
-                }
+                Err(e) => shared.set_failure(AppError::from_anyhow(e)),
             }
         });
     }
 
     pub(super) fn handle_stop_service(&mut self, service_name: String) {
         self.services_in_operation.insert(service_name.clone());
+        self.set_operation_running("Stopping service", Some(service_name.clone()));
         self.status_message = format!("Stopping service {}...", service_name);
 
         let initial_msg = format!("Stopping service: {}", service_name);
@@ -582,9 +587,8 @@ impl BrewstyApp {
 
         self.task_manager.set_active_task(AsyncTask::StopService {
             service_name: service_name.clone(),
-            success: Arc::clone(&shared.success),
+            result: Arc::clone(&shared.result),
             logs: Arc::clone(&shared.logs),
-            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.stop_service);
@@ -595,15 +599,14 @@ impl BrewstyApp {
                 Ok(_) => {
                     shared.set_success(format!("Successfully stopped service {}", service_name))
                 }
-                Err(e) => {
-                    shared.set_failure(format!("Error stopping service {}: {}", service_name, e))
-                }
+                Err(e) => shared.set_failure(AppError::from_anyhow(e)),
             }
         });
     }
 
     pub(super) fn handle_restart_service(&mut self, service_name: String) {
         self.services_in_operation.insert(service_name.clone());
+        self.set_operation_running("Restarting service", Some(service_name.clone()));
         self.status_message = format!("Restarting service {}...", service_name);
 
         let initial_msg = format!("Restarting service: {}", service_name);
@@ -615,9 +618,8 @@ impl BrewstyApp {
         self.task_manager
             .set_active_task(AsyncTask::RestartService {
                 service_name: service_name.clone(),
-                success: Arc::clone(&shared.success),
+                result: Arc::clone(&shared.result),
                 logs: Arc::clone(&shared.logs),
-                message: Arc::clone(&shared.message),
             });
 
         let use_case = Arc::clone(&self.use_cases.restart_service);
@@ -628,9 +630,7 @@ impl BrewstyApp {
                 Ok(_) => {
                     shared.set_success(format!("Successfully restarted service {}", service_name))
                 }
-                Err(e) => {
-                    shared.set_failure(format!("Error restarting service {}: {}", service_name, e))
-                }
+                Err(e) => shared.set_failure(AppError::from_anyhow(e)),
             }
         });
     }
@@ -641,7 +641,7 @@ impl BrewstyApp {
         }
 
         self.loading_clean_orphans = true;
-        self.loading = true;
+        self.set_operation_running("Cleaning orphaned dependencies", None);
         self.status_message = "Cleaning up orphaned dependencies...".to_string();
         self.log_manager
             .push("Cleaning up orphaned dependencies".to_string());
@@ -650,9 +650,8 @@ impl BrewstyApp {
         let shared = TaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::CleanOrphans {
-            success: Arc::clone(&shared.success),
+            result: Arc::clone(&shared.result),
             logs: Arc::clone(&shared.logs),
-            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.clean_orphans);
@@ -662,9 +661,7 @@ impl BrewstyApp {
                 Ok(_) => {
                     shared.set_success("Successfully cleaned up orphaned dependencies".to_string())
                 }
-                Err(e) => {
-                    shared.set_failure(format!("Error cleaning up orphaned dependencies: {}", e))
-                }
+                Err(e) => shared.set_failure(AppError::from_anyhow(e)),
             }
         });
     }
@@ -680,7 +677,7 @@ impl BrewstyApp {
 
         if let Some(path) = file_dialog.save_file() {
             self.loading_export = true;
-            self.loading = true;
+            self.set_operation_running("Exporting packages", None);
             self.status_message = "Exporting packages...".to_string();
             self.log_manager
                 .push(format!("Exporting packages to: {}", path.display()));
@@ -690,9 +687,8 @@ impl BrewstyApp {
 
             self.task_manager
                 .set_active_task(AsyncTask::ExportPackages {
-                    success: Arc::clone(&shared.success),
+                    result: Arc::clone(&shared.result),
                     logs: Arc::clone(&shared.logs),
-                    message: Arc::clone(&shared.message),
                 });
 
             let use_case = Arc::clone(&self.use_cases.export_packages);
@@ -708,7 +704,7 @@ impl BrewstyApp {
                         package_list.total_count(),
                         path_display
                     )),
-                    Err(e) => shared.set_failure(format!("Error exporting packages: {}", e)),
+                    Err(e) => shared.set_failure(AppError::from_anyhow(e)),
                 }
             });
         }
@@ -725,7 +721,7 @@ impl BrewstyApp {
 
         if let Some(path) = file_dialog.pick_file() {
             self.loading_import = true;
-            self.loading = true;
+            self.set_operation_running("Importing packages", None);
             self.status_message = "Importing packages...".to_string();
             self.log_manager
                 .push(format!("Importing packages from: {}", path.display()));
@@ -735,9 +731,8 @@ impl BrewstyApp {
 
             self.task_manager
                 .set_active_task(AsyncTask::ImportPackages {
-                    success: Arc::clone(&shared.success),
+                    result: Arc::clone(&shared.result),
                     logs: Arc::clone(&shared.logs),
-                    message: Arc::clone(&shared.message),
                 });
 
             let use_case = Arc::clone(&self.use_cases.import_packages);
@@ -749,7 +744,7 @@ impl BrewstyApp {
                         "Successfully imported packages from {}",
                         path_display
                     )),
-                    Err(e) => shared.set_failure(format!("Error importing packages: {}", e)),
+                    Err(e) => shared.set_failure(AppError::from_anyhow(e)),
                 }
             });
         }
@@ -761,7 +756,7 @@ impl BrewstyApp {
         }
 
         self.loading_update_all = true;
-        self.loading = true;
+        self.set_operation_running("Updating all packages", None);
         self.status_message = "Updating all packages...".to_string();
         self.log_manager.push("Updating all packages".to_string());
         tracing::info!("Updating all packages");
@@ -769,9 +764,8 @@ impl BrewstyApp {
         let shared = TaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::UpdateAll {
-            success: Arc::clone(&shared.success),
+            result: Arc::clone(&shared.result),
             logs: Arc::clone(&shared.logs),
-            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.update_all);
@@ -779,24 +773,22 @@ impl BrewstyApp {
         self.executor.spawn(async move {
             match use_case.execute().await {
                 Ok(_) => shared.set_success("Successfully updated all packages".to_string()),
-                Err(e) => shared.set_failure(format!("Error updating all packages: {}", e)),
+                Err(e) => shared.set_failure(AppError::from_anyhow(e)),
             }
         });
     }
 
     pub(super) fn show_cleanup_preview(&mut self, cleanup_type: CleanupType) {
-        self.loading = true;
+        self.set_operation_running("Loading cleanup preview", None);
         self.status_message = "Loading cleanup preview...".to_string();
         self.log_manager.push("Loading cleanup preview".to_string());
 
-        let preview = Arc::new(Mutex::new(None));
-        let error = Arc::new(Mutex::new(None));
+        let result = Arc::new(Mutex::new(None));
 
         self.task_manager
             .set_active_task(AsyncTask::CleanupPreview {
                 cleanup_type,
-                preview: Arc::clone(&preview),
-                error: Arc::clone(&error),
+                result: Arc::clone(&result),
             });
 
         match cleanup_type {
@@ -805,13 +797,13 @@ impl BrewstyApp {
                 self.executor.spawn(async move {
                     match use_case.preview().await {
                         Ok(p) => {
-                            if let Ok(mut prev) = preview.lock() {
-                                *prev = Some(p);
+                            if let Ok(mut preview_result) = result.lock() {
+                                *preview_result = Some(Ok(p));
                             }
                         }
                         Err(e) => {
-                            if let Ok(mut err) = error.lock() {
-                                *err = Some(format!("Error: {}", e));
+                            if let Ok(mut preview_result) = result.lock() {
+                                *preview_result = Some(Err(AppError::from_anyhow(e)));
                             }
                         }
                     }
@@ -822,13 +814,13 @@ impl BrewstyApp {
                 self.executor.spawn(async move {
                     match use_case.preview().await {
                         Ok(p) => {
-                            if let Ok(mut prev) = preview.lock() {
-                                *prev = Some(p);
+                            if let Ok(mut preview_result) = result.lock() {
+                                *preview_result = Some(Ok(p));
                             }
                         }
                         Err(e) => {
-                            if let Ok(mut err) = error.lock() {
-                                *err = Some(format!("Error: {}", e));
+                            if let Ok(mut preview_result) = result.lock() {
+                                *preview_result = Some(Err(AppError::from_anyhow(e)));
                             }
                         }
                     }
@@ -839,13 +831,13 @@ impl BrewstyApp {
                 self.executor.spawn(async move {
                     match use_case.preview().await {
                         Ok(p) => {
-                            if let Ok(mut prev) = preview.lock() {
-                                *prev = Some(p);
+                            if let Ok(mut preview_result) = result.lock() {
+                                *preview_result = Some(Ok(p));
                             }
                         }
                         Err(e) => {
-                            if let Ok(mut err) = error.lock() {
-                                *err = Some(format!("Error: {}", e));
+                            if let Ok(mut preview_result) = result.lock() {
+                                *preview_result = Some(Err(AppError::from_anyhow(e)));
                             }
                         }
                     }
@@ -860,7 +852,7 @@ impl BrewstyApp {
         }
 
         self.loading_clean_cache = true;
-        self.loading = true;
+        self.set_operation_running("Cleaning cache", None);
         self.status_message = "Cleaning cache...".to_string();
         self.log_manager.push("Cleaning Homebrew cache".to_string());
         tracing::info!("Cleaning Homebrew cache");
@@ -868,9 +860,8 @@ impl BrewstyApp {
         let shared = TaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::CleanCache {
-            success: Arc::clone(&shared.success),
+            result: Arc::clone(&shared.result),
             logs: Arc::clone(&shared.logs),
-            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.clean_cache);
@@ -878,7 +869,7 @@ impl BrewstyApp {
         self.executor.spawn(async move {
             match use_case.execute().await {
                 Ok(_) => shared.set_success("Successfully cleaned cache".to_string()),
-                Err(e) => shared.set_failure(format!("Error cleaning cache: {}", e)),
+                Err(e) => shared.set_failure(AppError::from_anyhow(e)),
             }
         });
     }
@@ -889,7 +880,7 @@ impl BrewstyApp {
         }
 
         self.loading_cleanup_old_versions = true;
-        self.loading = true;
+        self.set_operation_running("Cleaning old versions", None);
         self.status_message = "Cleaning up old versions...".to_string();
         self.log_manager
             .push("Cleaning up old versions".to_string());
@@ -899,9 +890,8 @@ impl BrewstyApp {
 
         self.task_manager
             .set_active_task(AsyncTask::CleanupOldVersions {
-                success: Arc::clone(&shared.success),
+                result: Arc::clone(&shared.result),
                 logs: Arc::clone(&shared.logs),
-                message: Arc::clone(&shared.message),
             });
 
         let use_case = Arc::clone(&self.use_cases.cleanup_old_versions);
@@ -909,22 +899,20 @@ impl BrewstyApp {
         self.executor.spawn(async move {
             match use_case.execute().await {
                 Ok(_) => shared.set_success("Successfully cleaned up old versions".to_string()),
-                Err(e) => shared.set_failure(format!("Error cleaning up old versions: {}", e)),
+                Err(e) => shared.set_failure(AppError::from_anyhow(e)),
             }
         });
     }
 
     pub(super) fn handle_doctor(&mut self) {
-        self.loading = true;
+        self.set_operation_running("Running brew doctor", None);
         self.status_message = "Running brew doctor...".to_string();
         self.log_manager.push("Running brew doctor".to_string());
 
         let result = Arc::new(Mutex::new(None));
-        let error = Arc::new(Mutex::new(None));
 
         self.task_manager.set_active_task(AsyncTask::Doctor {
             result: Arc::clone(&result),
-            error: Arc::clone(&error),
         });
 
         self.executor.spawn(async move {
@@ -936,17 +924,18 @@ impl BrewstyApp {
                 Ok(Ok(output)) => {
                     let parsed = crate::domain::entities::DoctorOutput::parse(&output);
                     if let Ok(mut r) = result.lock() {
-                        *r = Some(parsed);
+                        *r = Some(Ok(parsed));
                     }
                 }
                 Ok(Err(e)) => {
-                    if let Ok(mut err) = error.lock() {
-                        *err = Some(format!("brew doctor failed: {}", e));
+                    if let Ok(mut doctor_result) = result.lock() {
+                        *doctor_result = Some(Err(AppError::from_anyhow(e)));
                     }
                 }
                 Err(e) => {
-                    if let Ok(mut err) = error.lock() {
-                        *err = Some(format!("Task join error: {}", e));
+                    if let Ok(mut doctor_result) = result.lock() {
+                        *doctor_result =
+                            Some(Err(AppError::Unknown(format!("Task join error: {}", e))));
                     }
                 }
             }
@@ -954,15 +943,16 @@ impl BrewstyApp {
     }
 
     pub(super) fn load_taps(&mut self) {
-        self.loading = true;
+        self.taps_state = LoadState::Loading;
+        self.settings_message = None;
+        self.set_operation_running("Loading taps", None);
         self.status_message = "Loading taps...".to_string();
 
-        let taps = Arc::new(Mutex::new(Vec::new()));
-        let logs = Arc::new(Mutex::new(Vec::new()));
+        let shared = LoadTaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::LoadTaps {
-            taps: Arc::clone(&taps),
-            logs: Arc::clone(&logs),
+            state: Arc::clone(&shared.state),
+            logs: Arc::clone(&shared.logs),
         });
 
         self.executor.spawn(async move {
@@ -978,37 +968,33 @@ impl BrewstyApp {
                         .map(|l| l.trim().to_string())
                         .collect();
                     let msg = format!("Loaded {} taps", tap_list.len());
-                    if let Ok(mut t) = taps.lock() {
-                        *t = tap_list;
-                    }
-                    if let Ok(mut l) = logs.lock() {
-                        l.push(msg);
-                    }
+                    shared.push_log(msg);
+                    shared.set_state(LoadState::Ready(tap_list));
                 }
                 Ok(Err(e)) => {
-                    if let Ok(mut l) = logs.lock() {
-                        l.push(format!("Error loading taps: {}", e));
-                    }
+                    shared.push_log(format!("Error loading taps: {}", e));
+                    shared.set_state(LoadState::Error(AppError::from_anyhow(e)));
                 }
                 Err(e) => {
-                    if let Ok(mut l) = logs.lock() {
-                        l.push(format!("Task error: {}", e));
-                    }
+                    shared.push_log(format!("Task error: {}", e));
+                    shared.set_state(LoadState::Error(AppError::Unknown(format!(
+                        "Task error: {}",
+                        e
+                    ))));
                 }
             }
         });
     }
 
     pub(super) fn handle_tap(&mut self, name: String) {
-        self.loading = true;
+        self.set_operation_running("Adding tap", Some(name.clone()));
         self.status_message = format!("Tapping {}...", name);
         self.log_manager.push(format!("Tapping: {}", name));
 
         let shared = TaskSharedState::new();
         self.task_manager.set_active_task(AsyncTask::Tap {
-            success: Arc::clone(&shared.success),
+            result: Arc::clone(&shared.result),
             logs: Arc::clone(&shared.logs),
-            message: Arc::clone(&shared.message),
         });
 
         let tap_name = name.clone();
@@ -1019,22 +1005,21 @@ impl BrewstyApp {
             .await
             {
                 Ok(Ok(_)) => shared.set_success(format!("Successfully tapped {}", name)),
-                Ok(Err(e)) => shared.set_failure(format!("Error tapping {}: {}", name, e)),
-                Err(e) => shared.set_failure(format!("Task error: {}", e)),
+                Ok(Err(e)) => shared.set_failure(AppError::from_anyhow(e)),
+                Err(e) => shared.set_failure(AppError::Unknown(format!("Task error: {}", e))),
             }
         });
     }
 
     pub(super) fn handle_untap(&mut self, name: String) {
-        self.loading = true;
+        self.set_operation_running("Removing tap", Some(name.clone()));
         self.status_message = format!("Untapping {}...", name);
         self.log_manager.push(format!("Untapping: {}", name));
 
         let shared = TaskSharedState::new();
         self.task_manager.set_active_task(AsyncTask::Untap {
-            success: Arc::clone(&shared.success),
+            result: Arc::clone(&shared.result),
             logs: Arc::clone(&shared.logs),
-            message: Arc::clone(&shared.message),
         });
 
         let tap_name = name.clone();
@@ -1045,8 +1030,8 @@ impl BrewstyApp {
             .await
             {
                 Ok(Ok(_)) => shared.set_success(format!("Successfully untapped {}", name)),
-                Ok(Err(e)) => shared.set_failure(format!("Error untapping {}: {}", name, e)),
-                Err(e) => shared.set_failure(format!("Task error: {}", e)),
+                Ok(Err(e)) => shared.set_failure(AppError::from_anyhow(e)),
+                Err(e) => shared.set_failure(AppError::Unknown(format!("Task error: {}", e))),
             }
         });
     }
@@ -1061,6 +1046,12 @@ impl BrewstyApp {
         }
 
         self.loading_search = true;
+        self.search_state = LoadState::Loading;
+        self.search_message = None;
+        self.set_operation_running(
+            "Searching packages",
+            Some(self.filter_state.search_query().to_string()),
+        );
         self.status_message = format!("Searching for '{}'...", self.filter_state.search_query());
         let msg = format!("Searching for: {}", self.filter_state.search_query());
         self.log_manager.push(msg.clone());
@@ -1070,13 +1061,12 @@ impl BrewstyApp {
         let use_case_casks = Arc::clone(&self.use_cases.search);
         let query = self.filter_state.search_query().to_string();
 
-        let search_results = Arc::new(Mutex::new(Vec::new()));
-        let output_log = Arc::new(Mutex::new(Vec::new()));
+        let search_state = LoadTaskSharedState::new();
         let query_clone = query.clone();
 
         self.task_manager.set_active_task(AsyncTask::Search {
-            results: Arc::clone(&search_results),
-            logs: Arc::clone(&output_log),
+            state: Arc::clone(&search_state.state),
+            logs: Arc::clone(&search_state.logs),
         });
 
         self.executor.spawn(async move {
@@ -1087,6 +1077,14 @@ impl BrewstyApp {
 
             let mut results = Vec::new();
             let mut logs = Vec::new();
+            let formulae_error = formulae_result
+                .as_ref()
+                .err()
+                .map(|error| AppError::classify_message(error.to_string()));
+            let casks_error = casks_result
+                .as_ref()
+                .err()
+                .map(|error| AppError::classify_message(error.to_string()));
 
             match formulae_result {
                 Ok(packages) => {
@@ -1116,50 +1114,32 @@ impl BrewstyApp {
                 }
             }
 
-            if let Ok(mut results_guard) = search_results.lock() {
-                *results_guard = results;
+            for log in logs {
+                search_state.push_log(log);
             }
-            if let Ok(mut logs_guard) = output_log.lock() {
-                *logs_guard = logs;
-            }
+            let state = match (formulae_error, casks_error) {
+                (None, None) => LoadState::Ready(results),
+                (Some(error), None) | (None, Some(error)) => LoadState::Partial {
+                    data: results,
+                    warning: error,
+                },
+                (Some(left), Some(right)) => LoadState::Error(AppError::Unknown(format!(
+                    "{}; {}",
+                    left.short_message(),
+                    right.short_message()
+                ))),
+            };
+            search_state.set_state(state);
         });
     }
 
     pub(super) fn handle_bundle_dump(&mut self) {
-        let file_dialog = rfd::FileDialog::new()
-            .add_filter("Brewfile", &[""])
-            .set_file_name("Brewfile");
+        // Generate Brewfile preview from installed packages
+        let brewfile = generate_brewfile(self.merged_packages.get_all_packages());
+        let preview = export_brewfile_ruby(&brewfile);
 
-        if let Some(path) = file_dialog.save_file() {
-            let path_str = path.display().to_string();
-            self.loading_bundle_dump = true;
-            self.loading = true;
-            self.status_message = "Exporting Brewfile...".to_string();
-            self.log_manager
-                .push(format!("Exporting Brewfile to: {}", path_str));
-            tracing::info!("Exporting Brewfile to: {}", path_str);
-
-            let shared = TaskSharedState::new();
-
-            self.task_manager.set_active_task(AsyncTask::BundleDump {
-                success: Arc::clone(&shared.success),
-                logs: Arc::clone(&shared.logs),
-                message: Arc::clone(&shared.message),
-            });
-
-            let use_case = Arc::clone(&self.use_cases.bundle_dump);
-            let path_display = path_str.clone();
-
-            self.executor.spawn(async move {
-                match use_case.execute(&path_display).await {
-                    Ok(_) => shared.set_success(format!(
-                        "Successfully exported Brewfile to {}",
-                        path_display
-                    )),
-                    Err(e) => shared.set_failure(format!("Error exporting Brewfile: {}", e)),
-                }
-            });
-        }
+        // Show modal with preview
+        self.brewfile_modal.open_export(preview);
     }
 
     pub(super) fn handle_bundle_check_preview(&mut self) {
@@ -1170,20 +1150,18 @@ impl BrewstyApp {
         if let Some(path) = file_dialog.pick_file() {
             let path_str = path.display().to_string();
             self.loading_bundle_check = true;
-            self.loading = true;
+            self.set_operation_running("Checking Brewfile", Some(path_str.clone()));
             self.current_brewfile_path = Some(path_str.clone());
             self.status_message = "Checking Brewfile sync status...".to_string();
             self.log_manager
                 .push(format!("Checking Brewfile: {}", path_str));
             tracing::info!("Checking Brewfile sync: {}", path_str);
 
-            let preview = Arc::new(Mutex::new(None));
-            let error = Arc::new(Mutex::new(None));
+            let result = Arc::new(Mutex::new(None));
 
             self.task_manager
                 .set_active_task(AsyncTask::BundleCheckPreview {
-                    preview: Arc::clone(&preview),
-                    error: Arc::clone(&error),
+                    result: Arc::clone(&result),
                 });
 
             let use_case = Arc::clone(&self.use_cases.bundle_check_preview);
@@ -1191,13 +1169,13 @@ impl BrewstyApp {
             self.executor.spawn(async move {
                 match use_case.execute(&path_str).await {
                     Ok(p) => {
-                        if let Ok(mut prev) = preview.lock() {
-                            *prev = Some(p);
+                        if let Ok(mut preview_result) = result.lock() {
+                            *preview_result = Some(Ok(p));
                         }
                     }
                     Err(e) => {
-                        if let Ok(mut err) = error.lock() {
-                            *err = Some(format!("Error checking Brewfile: {}", e));
+                        if let Ok(mut preview_result) = result.lock() {
+                            *preview_result = Some(Err(AppError::from_anyhow(e)));
                         }
                     }
                 }
@@ -1207,7 +1185,7 @@ impl BrewstyApp {
 
     pub(super) fn handle_bundle_apply(&mut self, path: String, install: bool, cleanup: bool) {
         self.loading_bundle_apply = true;
-        self.loading = true;
+        self.set_operation_running("Applying Brewfile", Some(path.clone()));
         self.status_message = "Applying Brewfile changes...".to_string();
         self.log_manager.push(format!(
             "Applying Brewfile: {} (install={}, cleanup={})",
@@ -1223,9 +1201,8 @@ impl BrewstyApp {
         let shared = TaskSharedState::new();
 
         self.task_manager.set_active_task(AsyncTask::BundleApply {
-            success: Arc::clone(&shared.success),
+            result: Arc::clone(&shared.result),
             logs: Arc::clone(&shared.logs),
-            message: Arc::clone(&shared.message),
         });
 
         let use_case = Arc::clone(&self.use_cases.bundle_apply);
@@ -1233,7 +1210,7 @@ impl BrewstyApp {
         self.executor.spawn(async move {
             match use_case.execute(&path, install, cleanup).await {
                 Ok(_) => shared.set_success("Successfully applied Brewfile changes".to_string()),
-                Err(e) => shared.set_failure(format!("Error applying Brewfile changes: {}", e)),
+                Err(e) => shared.set_failure(AppError::from_anyhow(e)),
             }
         });
     }
@@ -1315,13 +1292,11 @@ impl BrewstyApp {
         tracing::info!("Loading info for service: {}", service_name);
 
         let result = Arc::new(Mutex::new(None));
-        let error = Arc::new(Mutex::new(None));
 
         self.task_manager
             .set_active_task(AsyncTask::ServiceInfoLoad {
                 service_name: service_name.clone(),
                 result: Arc::clone(&result),
-                error: Arc::clone(&error),
             });
 
         let use_case = Arc::clone(&self.use_cases.get_service_info);
@@ -1331,12 +1306,12 @@ impl BrewstyApp {
             match use_case.execute(&name).await {
                 Ok(info) => {
                     if let Ok(mut r) = result.lock() {
-                        *r = Some(info);
+                        *r = Some(Ok(info));
                     }
                 }
                 Err(e) => {
-                    if let Ok(mut err) = error.lock() {
-                        *err = Some(format!("Error loading service info: {}", e));
+                    if let Ok(mut service_result) = result.lock() {
+                        *service_result = Some(Err(AppError::from_anyhow(e)));
                     }
                 }
             }
@@ -1351,13 +1326,11 @@ impl BrewstyApp {
         tracing::info!("Loading log for service: {}", service_name);
 
         let result = Arc::new(Mutex::new(None));
-        let error = Arc::new(Mutex::new(None));
 
         self.task_manager
             .set_active_task(AsyncTask::ServiceLogLoad {
                 service_name: service_name.clone(),
                 result: Arc::clone(&result),
-                error: Arc::clone(&error),
             });
 
         let use_case = Arc::clone(&self.use_cases.get_service_log);
@@ -1367,16 +1340,29 @@ impl BrewstyApp {
             match use_case.execute(&name, 100).await {
                 Ok(log_text) => {
                     if let Ok(mut r) = result.lock() {
-                        *r = Some(log_text);
+                        *r = Some(Ok(log_text));
                     }
                 }
                 Err(e) => {
-                    if let Ok(mut err) = error.lock() {
-                        *err = Some(format!("Error loading service log: {}", e));
+                    if let Ok(mut service_result) = result.lock() {
+                        *service_result = Some(Err(AppError::from_anyhow(e)));
                     }
                 }
             }
         });
+    }
+
+    pub(super) fn handle_open_path(&mut self, path: String) {
+        match std::process::Command::new("open").arg(&path).spawn() {
+            Ok(_) => {
+                self.set_operation_success(format!("Opened {}", path));
+            }
+            Err(error) => {
+                let app_error = AppError::Io(format!("Failed to open {}: {}", path, error));
+                self.set_operation_failure(app_error.clone());
+                self.services_message = Some(app_error.to_user_message("Failed to open path"));
+            }
+        }
     }
 
     pub(super) fn handle_undo(&mut self, request: UndoRequest) {
@@ -1411,5 +1397,31 @@ impl BrewstyApp {
                 self.toast_manager.error("This operation cannot be undone");
             }
         }
+    }
+
+    pub(super) fn check_for_updates_async(&mut self) {
+        let shared = TaskSharedState::new();
+        let result = Arc::clone(&shared.result);
+        let logs = Arc::clone(&shared.logs);
+
+        self.executor.spawn(async move {
+            match crate::application::use_cases::check_for_updates().await {
+                Ok(Some(result)) => shared.set_success(format!(
+                    "New version available: {} → {}",
+                    result.current_version, result.latest_version
+                )),
+                Ok(None) => shared.set_success("No updates available".to_string()),
+                Err(e) => shared.set_failure(AppError::from_anyhow(e)),
+            }
+        });
+
+        self.task_manager
+            .set_active_task(AsyncTask::CheckUpdates { result, logs });
+    }
+
+    pub(super) fn show_package_details(&mut self, package_name: &str) {
+        self.package_details_modal
+            .open_for_package_name(package_name.to_string());
+        self.load_package_info(package_name.to_string(), PackageType::Formula);
     }
 }

@@ -187,6 +187,20 @@ impl OperationHistory {
     pub fn get(&self, id: u64) -> Option<&OperationRecord> {
         self.records.iter().find(|record| record.id == id)
     }
+
+    /// Search records by target name (case-insensitive).
+    pub fn search_by_target(&self, query: &str) -> Vec<&OperationRecord> {
+        let query_lower = query.to_lowercase();
+        self.records
+            .iter()
+            .filter(|record| {
+                record
+                    .target
+                    .as_ref()
+                    .is_some_and(|t| t.to_lowercase().contains(&query_lower))
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]

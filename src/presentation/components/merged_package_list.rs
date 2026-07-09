@@ -62,6 +62,10 @@ impl MergedPackageList {
             .cloned()
     }
 
+    pub fn get_all_packages(&self) -> &[Package] {
+        &self.packages
+    }
+
     pub fn mark_package_updated(&mut self, package_name: &str) {
         if let Some(pos) = self
             .outdated_packages
@@ -118,6 +122,7 @@ impl MergedPackageList {
             }
         };
         self.packages.sort_by(cmp);
+        self.outdated_packages.sort_by(cmp);
     }
 
     pub fn select_all_outdated(&mut self) {
@@ -155,6 +160,8 @@ impl MergedPackageList {
         ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
+                let mut visible_outdated = 0usize;
+                let mut visible_installed = 0usize;
                 // Outdated Packages Section
                 if !self.outdated_packages.is_empty() {
                     ui.heading("⚠ Outdated Packages");
@@ -166,15 +173,13 @@ impl MergedPackageList {
                         .resizable(true)
                         .vscroll(false)
                         .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-                        .column(Column::initial(30.0).resizable(false)) // Checkbox
-                        .column(Column::auto().at_least(150.0).resizable(true)) // Name
+                        .column(Column::auto().at_least(180.0).resizable(true)) // Select + Name
                         .column(Column::initial(150.0).resizable(true)) // Version
                         .column(Column::initial(80.0).resizable(true)) // Type
                         .column(Column::initial(80.0).resizable(true)) // Size
                         .column(Column::initial(100.0).resizable(true)) // Status
                         .column(Column::remainder().at_least(120.0)) // Actions
                         .header(TABLE_HEADER_HEIGHT, |mut header| {
-                            header.col(|ui| padded_cell(ui, |_ui| {}));
                             header.col(|ui| {
                                 padded_cell(ui, |ui| {
                                     ui.strong("Name");
@@ -223,14 +228,34 @@ impl MergedPackageList {
                                     continue;
                                 }
 
+                                visible_outdated += 1;
+
                                 let row_height = text_height + TABLE_ROW_PADDING;
 
                                 body.row(row_height, |mut row| {
                                     row.col(|ui| {
                                         padded_cell(ui, |ui| {
-                                            let mut is_selected =
+                                            let was_selected =
                                                 self.outdated_selection.is_selected(&package.name);
-                                            if ui.checkbox(&mut is_selected, "").changed() {
+                                            let mut is_selected = was_selected;
+
+                                            let mut should_toggle_from_label = false;
+                                            ui.horizontal(|ui| {
+                                                ui.spacing_mut().item_spacing.x = 4.0;
+                                                ui.checkbox(&mut is_selected, "");
+                                                if ui
+                                                    .selectable_label(is_selected, &package.name)
+                                                    .clicked()
+                                                {
+                                                    should_toggle_from_label = true;
+                                                }
+                                            });
+
+                                            if should_toggle_from_label {
+                                                is_selected = !was_selected;
+                                            }
+
+                                            if is_selected != was_selected {
                                                 if is_selected {
                                                     self.outdated_selection
                                                         .select(package.name.clone());
@@ -238,12 +263,6 @@ impl MergedPackageList {
                                                     self.outdated_selection.deselect(&package.name);
                                                 }
                                             }
-                                        })
-                                    });
-
-                                    row.col(|ui| {
-                                        padded_cell(ui, |ui| {
-                                            ui.label(&package.name);
                                         })
                                     });
 
@@ -297,7 +316,7 @@ impl MergedPackageList {
                                         padded_cell(ui, |ui| {
                                             if let Some(size) = package.installed_size {
                                                 ui.label(
-                                                    crate::presentation::ui::app::format_size(size),
+                                                    crate::presentation::utils::format_size(size),
                                                 );
                                             } else {
                                                 ui.label("-");
@@ -327,38 +346,27 @@ impl MergedPackageList {
 
                                     row.col(|ui| {
                                         padded_cell(ui, |ui| {
-                                            ui.horizontal(|ui| {
-                                                if !package.pinned
-                                                    && ui
-                                                        .button("🔄")
-                                                        .on_hover_text("Update")
-                                                        .clicked()
+                                            ui.menu_button("Actions", |ui| {
+                                                if !package.pinned && ui.button("Update").clicked()
                                                 {
                                                     *on_update = Some(package.clone());
+                                                    ui.close();
                                                 }
                                                 if package.pinned {
-                                                    if ui
-                                                        .button("🔓")
-                                                        .on_hover_text("Unpin")
-                                                        .clicked()
-                                                    {
+                                                    if ui.button("Unpin").clicked() {
                                                         *on_unpin = Some(package.clone());
+                                                        ui.close();
                                                     }
-                                                } else if ui
-                                                    .button("📌")
-                                                    .on_hover_text("Pin")
-                                                    .clicked()
-                                                {
+                                                } else if ui.button("Pin").clicked() {
                                                     *on_pin = Some(package.clone());
+                                                    ui.close();
                                                 }
 
                                                 if package.description.is_some()
-                                                    && ui
-                                                        .button("ℹ")
-                                                        .on_hover_text("Info")
-                                                        .clicked()
+                                                    && ui.button("Info").clicked()
                                                 {
                                                     self.show_info_action = Some(package.clone());
+                                                    ui.close();
                                                 }
                                             });
                                         })
@@ -366,6 +374,15 @@ impl MergedPackageList {
                                 });
                             }
                         });
+
+                    if visible_outdated == 0 {
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new("No outdated packages match the current filters.")
+                                .italics()
+                                .color(Color32::GRAY),
+                        );
+                    }
 
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
@@ -455,6 +472,8 @@ impl MergedPackageList {
                                     continue;
                                 }
 
+                                visible_installed += 1;
+
                                 let row_height = text_height + TABLE_ROW_PADDING;
 
                                 body.row(row_height, |mut row| {
@@ -509,7 +528,7 @@ impl MergedPackageList {
                                         padded_cell(ui, |ui| {
                                             if let Some(size) = package.installed_size {
                                                 ui.label(
-                                                    crate::presentation::ui::app::format_size(size),
+                                                    crate::presentation::utils::format_size(size),
                                                 );
                                             } else {
                                                 ui.label("-");
@@ -539,50 +558,36 @@ impl MergedPackageList {
 
                                     row.col(|ui| {
                                         padded_cell(ui, |ui| {
-                                            ui.horizontal(|ui| {
-                                                if ui
-                                                    .button("X")
-                                                    .on_hover_text("Uninstall")
-                                                    .clicked()
-                                                {
+                                            ui.menu_button("Actions", |ui| {
+                                                if ui.button("Uninstall").clicked() {
                                                     *on_uninstall = Some(package.clone());
+                                                    ui.close();
                                                 }
                                                 if matches!(
                                                     package.package_type,
                                                     PackageType::Formula
                                                 ) {
                                                     if package.pinned {
-                                                        if ui
-                                                            .button("🔓")
-                                                            .on_hover_text("Unpin")
-                                                            .clicked()
-                                                        {
+                                                        if ui.button("Unpin").clicked() {
                                                             *on_unpin = Some(package.clone());
+                                                            ui.close();
                                                         }
-                                                    } else if ui
-                                                        .button("📌")
-                                                        .on_hover_text("Pin")
-                                                        .clicked()
-                                                    {
+                                                    } else if ui.button("Pin").clicked() {
                                                         *on_pin = Some(package.clone());
+                                                        ui.close();
                                                     }
                                                 }
 
                                                 if package.version.is_none() {
-                                                    if ui
-                                                        .button("⏳")
-                                                        .on_hover_text("Load Info")
-                                                        .clicked()
-                                                    {
+                                                    if ui.button("Load Info").clicked() {
                                                         *on_load_info = Some(package.clone());
+                                                        ui.close();
                                                     }
                                                 } else if package.description.is_some()
-                                                    && ui
-                                                        .button("ℹ")
-                                                        .on_hover_text("Info")
-                                                        .clicked()
+                                                    && ui.button("Info").clicked()
                                                 {
                                                     self.show_info_action = Some(package.clone());
+                                                    ui.close();
                                                 }
                                             });
                                         })
@@ -590,31 +595,39 @@ impl MergedPackageList {
                                 });
                             }
                         });
+
+                    if visible_installed == 0 {
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new("No installed packages match the current filters.")
+                                .italics()
+                                .color(Color32::GRAY),
+                        );
+                    }
                 }
             });
+    }
+}
 
-        if self.outdated_selection.has_selection() {
-            let selected_count = self.outdated_selection.get_selected().len();
-            let text = format!("🚀 Update Selected ({})", selected_count);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-            egui::Area::new("floating_update_button".into())
-                .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-20.0, -20.0))
-                .order(egui::Order::Foreground)
-                .show(ui.ctx(), |ui| {
-                    let button = egui::Button::new(
-                        RichText::new(text)
-                            .color(Color32::WHITE)
-                            .size(16.0)
-                            .strong(),
-                    )
-                    .fill(Color32::from_rgb(0, 122, 255))
-                    .corner_radius(8.0)
-                    .min_size(egui::vec2(120.0, 40.0));
+    #[test]
+    fn apply_sort_sorts_outdated_packages_too() {
+        let mut list = MergedPackageList::new();
+        list.update_packages(vec![
+            Package::new("zeta".to_string(), PackageType::Formula),
+            Package::new("alpha".to_string(), PackageType::Formula),
+        ]);
+        list.update_outdated_packages(vec![
+            Package::new("zulu".to_string(), PackageType::Formula),
+            Package::new("beta".to_string(), PackageType::Formula),
+        ]);
 
-                    if ui.add(button).clicked() {
-                        *on_update_selected = Some(self.outdated_selection.get_selected());
-                    }
-                });
-        }
+        list.apply_sort(SortField::Name, SortOrder::Ascending);
+
+        assert_eq!(list.packages[0].name, "alpha");
+        assert_eq!(list.outdated_packages[0].name, "beta");
     }
 }
